@@ -8,7 +8,7 @@ export interface SectionBlock {
 }
 
 /**
- * Parses the AsciiDoc content into a flat list of sections based on headers.
+ * Parses Markdown content into a flat list of sections based on ATX headers.
  * Includes preamble as the first block if it exists.
  */
 export const parseBlocks = (content: string): SectionBlock[] => {
@@ -20,7 +20,7 @@ export const parseBlocks = (content: string): SectionBlock[] => {
   let currentStartLine = 1;
 
   lines.forEach((line, index) => {
-    const headerMatch = line.match(/^(=+)\s+(.+)$/);
+    const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       // If we have accumulated lines for the previous block, push it
       if (currentLines.length > 0) {

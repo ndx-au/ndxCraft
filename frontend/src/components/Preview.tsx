@@ -2,12 +2,12 @@
  * Preview Component
  * 
  * Location: Right pane of the application (when toggled on).
- * Purpose: Renders the AsciiDoc content visually. It updates in real-time 
+ * Purpose: Renders the Markdown content visually. It updates in real-time 
  *          as the user types in the Editor and supports scroll synchronization.
  */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Maximize2, Minimize2, Edit3 } from 'lucide-react';
-import { convertToHtml } from '../services/asciidocService';
+import { convertToHtml } from '../services/markdownService';
 
 interface PreviewProps {
   content: string;
@@ -67,6 +67,14 @@ const Preview: React.FC<PreviewProps> = ({
           blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; font-style: italic; color: #4b5563; }
           img { max-width: 100%; height: auto; }
           
+          /* highlight.js base styles */
+          .hljs { background: #1f2937; color: #f9fafb; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+          .hljs-comment, .hljs-quote { color: #9ca3af; font-style: italic; }
+          .hljs-keyword, .hljs-selector-tag { color: #c084fc; }
+          .hljs-string, .hljs-attr { color: #86efac; }
+          .hljs-number, .hljs-literal { color: #fcd34d; }
+          .hljs-title, .hljs-section { color: #93c5fd; font-weight: 600; }
+          
           /* Highlight target for debugging/visual feedback */
           .highlight-target {
             background-color: rgba(255, 255, 0, 0.2);
@@ -75,7 +83,7 @@ const Preview: React.FC<PreviewProps> = ({
         </style>
         <style id="custom-style"></style>
       </head>
-      <body class="asciidoc-preview">
+      <body class="markdown-preview">
         <div id="content"></div>
         <script>
           const contentDiv = document.getElementById('content');

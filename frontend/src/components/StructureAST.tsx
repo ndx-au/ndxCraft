@@ -2,12 +2,12 @@
  * StructureAST Component
  * 
  * Location: Inside the LeftSidebar (Structure tab, when "AST" mode is active).
- * Purpose: Visualizes the Abstract Syntax Tree (AST) of the AsciiDoc document.
+ * Purpose: Visualizes the document outline (AST) of the Markdown document.
  *          Useful for debugging document structure and understanding parsing.
  */
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { parseAST, AstNode } from '../services/asciidocService';
+import { parseAST, AstNode } from '../services/markdownService';
 import { Hash, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface StructureASTProps {
@@ -85,7 +85,7 @@ const StructureAST: React.FC<StructureASTProps> = ({ content, onNodeClick }) => 
 
       {tree.length === 0 && (
         <div className="text-xs text-gray-600 italic p-4 text-center">
-          No sections found. Start with = Title
+          No sections found. Start with # Title
         </div>
       )}
 

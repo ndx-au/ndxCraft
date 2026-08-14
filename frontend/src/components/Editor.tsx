@@ -8,7 +8,6 @@
 import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import MonacoEditor, { OnMount } from '@monaco-editor/react';
-import { conf, languageDef, languageID } from '../monaco/asciidoc';
 
 export interface EditorHandle {
   focus: () => void;
@@ -97,13 +96,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ defaultValue, onChange, 
 
   const handleEditorDidMount: OnMount = React.useCallback((editor, monaco) => {
     editorRef.current = editor;
-    editorRef.current = editor;
     monacoRef.current = monaco;
-
-    // Register AsciiDoc language
-    monaco.languages.register({ id: languageID });
-    monaco.languages.setMonarchTokensProvider(languageID, languageDef);
-    monaco.languages.setLanguageConfiguration(languageID, conf);
 
     // Define and apply Technical Writer theme
     monaco.editor.defineTheme('technical-writer', {
@@ -176,7 +169,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ defaultValue, onChange, 
 
       <MonacoEditor
         height="100%"
-        language={languageID}
+        language="markdown"
         theme="technical-writer"
         defaultValue={defaultValue}
         onChange={handleEditorChange}

@@ -51,16 +51,16 @@ const Toolbar: React.FC<ToolbarProps> = ({ onInsert, onAIRequest, onOpen, onSave
         <div className="w-px h-6 bg-gray-600 mx-2" />
         <Btn id="ndx-toolbar-undo" icon={Undo} label="Undo" onClick={onUndo} />
         <Btn id="ndx-toolbar-redo" icon={Redo} label="Redo" onClick={onRedo} />
-        <Btn id="ndx-toolbar-heading" icon={Heading} label="Heading" onClick={() => onInsert('\n== Heading\n', 12)} />
-        <Btn id="ndx-toolbar-bold" icon={Bold} label="Bold" onClick={() => onInsert('*bold text*', 1)} />
-        <Btn id="ndx-toolbar-italic" icon={Italic} label="Italic" onClick={() => onInsert('_italic text_', 1)} />
-        <Btn id="ndx-toolbar-code" icon={Code} label="Code Block" onClick={() => onInsert('\n[source,typescript]\n----\nconsole.log("Hello");\n----\n', 22)} />
+        <Btn id="ndx-toolbar-heading" icon={Heading} label="Heading" onClick={() => onInsert('\n## Heading\n', 11)} />
+        <Btn id="ndx-toolbar-bold" icon={Bold} label="Bold" onClick={() => onInsert('**bold text**', 2)} />
+        <Btn id="ndx-toolbar-italic" icon={Italic} label="Italic" onClick={() => onInsert('*italic text*', 1)} />
+        <Btn id="ndx-toolbar-code" icon={Code} label="Code Block" onClick={() => onInsert('\n```typescript\nconsole.log("Hello");\n```\n', 16)} />
         <div className="w-px h-6 bg-gray-600 mx-2" />
-        <Btn id="ndx-toolbar-list-bullet" icon={List} label="Bulleted List" onClick={() => onInsert('\n* Item 1\n* Item 2\n', 0)} />
-        <Btn id="ndx-toolbar-list-ordered" icon={ListOrdered} label="Numbered List" onClick={() => onInsert('\n. Step 1\n. Step 2\n', 0)} />
-        <Btn id="ndx-toolbar-link" icon={Link} label="Link" onClick={() => onInsert('https://example.com[Link Text]', 0)} />
-        <Btn id="ndx-toolbar-image" icon={Image} label="Image" onClick={() => onInsert('image::https://picsum.photos/800/400[Alt Text]', 0)} />
-        <Btn id="ndx-toolbar-table" icon={Table} label="Table" onClick={() => onInsert('\n|===\n|Header 1 |Header 2\n\n|Cell 1\n|Cell 2\n|===\n', 0)} />
+        <Btn id="ndx-toolbar-list-bullet" icon={List} label="Bulleted List" onClick={() => onInsert('\n- Item 1\n- Item 2\n', 0)} />
+        <Btn id="ndx-toolbar-list-ordered" icon={ListOrdered} label="Numbered List" onClick={() => onInsert('\n1. Step 1\n2. Step 2\n', 0)} />
+        <Btn id="ndx-toolbar-link" icon={Link} label="Link" onClick={() => onInsert('[Link Text](https://example.com)', 0)} />
+        <Btn id="ndx-toolbar-image" icon={Image} label="Image" onClick={() => onInsert('![Alt Text](https://picsum.photos/800/400)', 0)} />
+        <Btn id="ndx-toolbar-table" icon={Table} label="Table" onClick={() => onInsert('\n| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n', 0)} />
       </div>
 
       <div className="flex items-center gap-2">

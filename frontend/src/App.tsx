@@ -23,41 +23,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const INITIAL_CONTENT = `= Welcome to ndxCraft
-Author Name <author@example.com>
-v1.0, 2024-05-20
+const INITIAL_CONTENT = `# Welcome to ndxCraft
 
-:toc:
-:icons: font
+*Author Name <author@example.com>*  
+*v1.0, 2024-05-20*
 
-== Introduction
+## Introduction
 
-ndxCraft is a modern AsciiDoc editor built with **React, Wails, and Vite**.
+ndxCraft is a modern Markdown editor built with **React, Wails, and Vite**.
 
-== Getting Started
+## Getting Started
 
 Click the **Projects** button in the toolbar to open or create a project.
 
 It features:
-* Real-time preview
-* Document Outline Navigation
-* AI-powered writing assistance
-* Focus modes for distraction-free writing
 
-== Editing Structure
+- Real-time preview
+- Document Outline Navigation
+- AI-powered writing assistance
+- Focus modes for distraction-free writing
+
+## Editing Structure
 
 Go to the **Structure** tab on the left to drag and drop sections.
 This allows you to reorganize large documents easily.
 
-== Code Example
+## Code Example
 
-[source,typescript]
-----
+\`\`\`typescript
 const greeting = "Hello World";
 console.log(greeting);
-----
+\`\`\`
 
-== Conclusion
+## Conclusion
 
 Enjoy writing!
 `;
@@ -67,7 +65,7 @@ const App: React.FC = () => {
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [activeLeftTab, setActiveLeftTab] = useState<LeftTab>(LeftTab.FILES);
-  const [fileName, setFileName] = useState<string>('untitled.adoc');
+  const [fileName, setFileName] = useState<string>('untitled.md');
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -160,7 +158,7 @@ const App: React.FC = () => {
 
   // Save App State & Shadow File
   useEffect(() => {
-    if (fileName && fileName !== 'untitled.adoc') {
+    if (fileName && fileName !== 'untitled.md') {
       SaveAppState("lastFile", fileName);
       SaveAppState("cursorPos", cursorPosRef.current.toString());
 
@@ -189,7 +187,7 @@ const App: React.FC = () => {
         // So we ignore this or remove the handler
       } else if (event.data.type === 'preview-edit') {
         // Update content from preview edit
-        // WARNING: This comes from innerText, so it strips AsciiDoc formatting!
+        // WARNING: This comes from innerText, so it strips Markdown formatting!
         // This is a "destructive" sync but fulfills the request for state management.
         const newContent = event.data.content;
         setContent(newContent);
@@ -206,7 +204,7 @@ const App: React.FC = () => {
         if (sourcePos && sourcePos.line) {
           // Calculate absolute character index from Line Number + Offset
           const lines = currentContent.split('\n');
-          const lineIndex = sourcePos.line - 1; // Asciidoctor is 1-indexed
+          const lineIndex = sourcePos.line - 1; // Line numbers are 1-indexed
 
           if (lineIndex >= 0 && lineIndex < lines.length) {
             let charCount = 0;
@@ -592,11 +590,11 @@ const App: React.FC = () => {
   const handleSave = async () => {
     try {
       let filePath = fileName;
-      if (filePath === 'untitled.adoc') {
+      if (filePath === 'untitled.md') {
         filePath = await SelectSaveFile();
       }
 
-      if (filePath && filePath !== 'untitled.adoc') {
+      if (filePath && filePath !== 'untitled.md') {
         await SaveFile(filePath, content);
         await SaveShadowFile(filePath, content, false);
         setSavedContent(content); // This will set isDirty to false
@@ -673,10 +671,10 @@ const App: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       // @ts-ignore - WebView2 specific
       const path = e.dataTransfer.files[0].path || e.dataTransfer.files[0].name;
-      if (path.endsWith('.adoc')) {
+      if (path.endsWith('.md') || path.endsWith('.markdown')) {
         handleOpenFile(path);
       } else {
-        alert("Only .adoc files are supported");
+        alert("Only .md files are supported");
       }
     }
   };
@@ -692,7 +690,7 @@ const App: React.FC = () => {
       if (pendingFileToOpen) performOpenFile(pendingFileToOpen);
     } else {
       // Discard changes: Clear the shadow file so we don't reload dirty state
-      if (fileName && fileName !== 'untitled.adoc') {
+      if (fileName && fileName !== 'untitled.md') {
         try {
           await ClearShadowFile(fileName);
         } catch (e) {
@@ -732,7 +730,7 @@ const App: React.FC = () => {
 
     if (window.confirm(`Discard all changes to "${fileName}"? This cannot be undone.`)) {
       try {
-        if (fileName !== 'untitled.adoc') {
+        if (fileName !== 'untitled.md') {
           await ClearShadowFile(fileName);
           await performOpenFile(fileName);
         } else {

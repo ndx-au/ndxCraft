@@ -51,9 +51,9 @@ func (a *App) SaveFile(path string, content string) error {
 // SelectFile opens a file dialog and returns the path
 func (a *App) SelectFile() (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Open AsciiDoc File",
+		Title: "Open Markdown File",
 		Filters: []runtime.FileFilter{
-			{DisplayName: "AsciiDoc Files", Pattern: "*.adoc;*.txt"},
+			{DisplayName: "Markdown Files", Pattern: "*.md;*.markdown;*.txt"},
 		},
 	})
 }
@@ -71,9 +71,9 @@ func (a *App) SelectCssFile() (string, error) {
 // SelectSaveFile opens a save dialog and returns the path
 func (a *App) SelectSaveFile() (string, error) {
 	return runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title: "Save AsciiDoc File",
+		Title: "Save Markdown File",
 		Filters: []runtime.FileFilter{
-			{DisplayName: "AsciiDoc Files", Pattern: "*.adoc"},
+			{DisplayName: "Markdown Files", Pattern: "*.md"},
 		},
 	})
 }
@@ -106,7 +106,7 @@ func (a *App) SelectSvgFile() (string, error) {
 	})
 }
 
-// GenerateContent generates AsciiDoc content using Gemini
+// GenerateContent generates Markdown content using Gemini
 func (a *App) GenerateContent(prompt string, contextText string) (string, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
@@ -122,14 +122,14 @@ func (a *App) GenerateContent(prompt string, contextText string) (string, error)
 	model := client.GenerativeModel("gemini-2.0-flash")
 	model.SetTemperature(0.7)
 
-	fullPrompt := fmt.Sprintf(`You are an expert technical writer and AsciiDoc specialist.
-    Your task is to generate or improve AsciiDoc content based on the user's request.
+	fullPrompt := fmt.Sprintf(`You are an expert technical writer and Markdown specialist.
+    Your task is to generate or improve Markdown content based on the user's request.
     
     User Request: %s
     
     %s
     
-    Output ONLY the raw AsciiDoc content. Do not include markdown code fences (like `+"```"+`asciidoc) unless specifically asked to explain code. Do not add conversational filler.`, prompt, func() string {
+    Output ONLY the raw Markdown content. Do not wrap the output in code fences unless specifically asked to explain code. Do not add conversational filler.`, prompt, func() string {
 		if contextText != "" {
 			return fmt.Sprintf("Current Document Context:\n%s\n", contextText)
 		}
@@ -171,7 +171,7 @@ func (a *App) FixGrammar(text string) (string, error) {
 
 	model := client.GenerativeModel("gemini-1.5-flash")
 
-	prompt := fmt.Sprintf(`Fix the grammar and improve the clarity of the following AsciiDoc text. Maintain all AsciiDoc syntax/formatting exactly as is. Output ONLY the corrected text.
+	prompt := fmt.Sprintf(`Fix the grammar and improve the clarity of the following Markdown text. Maintain all Markdown syntax/formatting exactly as is. Output ONLY the corrected text.
 
 Text:
 %s`, text)
@@ -252,14 +252,8 @@ func (a *App) readDirRecursive(dirPath string) ([]*FileNode, error) {
 			// User wants to traverse subfolders.
 			nodes = append(nodes, node)
 		} else {
-			// Filter for .adoc files or just include all?
-			// The previous logic filtered for .adoc. Let's keep that for files, but maybe allow others?
-			// User said "FS navigation tree", usually implies all relevant files.
-			// Let's stick to .adoc and maybe .txt for now as per previous filter,
-			// but maybe we should be more permissive for a general tree.
-			// Let's allow .adoc, .txt, .md, .json, .css for now.
 			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == ".adoc" || ext == ".txt" || ext == ".md" || ext == ".css" {
+			if ext == ".md" || ext == ".markdown" || ext == ".txt" || ext == ".css" {
 				nodes = append(nodes, node)
 			}
 		}
@@ -267,7 +261,7 @@ func (a *App) readDirRecursive(dirPath string) ([]*FileNode, error) {
 	return nodes, nil
 }
 
-// ListFiles lists .adoc files in the given directory (Flat list for backward compatibility or simple search)
+// ListFiles lists .md files in the given directory (Flat list for backward compatibility or simple search)
 func (a *App) ListFiles(dirPath string) ([]string, error) {
 	if dirPath == "" {
 		dirPath = "./content"
@@ -286,7 +280,8 @@ func (a *App) ListFiles(dirPath string) ([]string, error) {
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			name := entry.Name()
-			if len(name) > 5 && name[len(name)-5:] == ".adoc" {
+			ext := strings.ToLower(filepath.Ext(name))
+			if ext == ".md" || ext == ".markdown" {
 				files = append(files, name)
 			}
 		}
