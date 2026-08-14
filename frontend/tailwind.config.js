@@ -12,7 +12,17 @@ export default {
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
+  		fontFamily: {
+  			sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+  			mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+  		},
   		colors: {
+  			fcms: 'hsl(var(--fcms))',
+  			dirty: 'hsl(var(--dirty))',
+  			ok: 'hsl(var(--ok))',
+  			panel: 'hsl(var(--panel))',
+  			raised: 'hsl(var(--raised))',
+  			app: 'hsl(var(--app))',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

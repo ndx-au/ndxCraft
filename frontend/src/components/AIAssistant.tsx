@@ -1,129 +1,90 @@
-/**
- * AIAssistant Component
- * 
- * Location: Floating or Sidebar panel (context dependent).
- * Purpose: Provides AI-powered assistance, such as chat, code generation, 
- *          or content analysis.
- */
-import React, { useState } from 'react';
-import { X, Send, Sparkles, Loader2, Check } from 'lucide-react';
-import { GenerateContent, FixGrammar } from '../../wailsjs/go/main/App';
+import React, { useState } from 'react'
+import { Send, Sparkles, Loader2, Check } from 'lucide-react'
+import { GenerateContent, FixGrammar, HasGeminiKey } from '../../wailsjs/go/main/App'
+import { Button } from './ui/button'
 
-interface AIAssistantProps {
-  isOpen: boolean;
-  onClose: () => void;
-  currentContent: string;
-  onApply: (text: string) => void;
+interface Props {
+  currentContent: string
+  selection: string
+  title: string
+  agentContext: unknown
+  onApply: (text: string) => void
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose, currentContent, onApply }) => {
-  const [prompt, setPrompt] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+export default function AIAssistant({ currentContent, selection, title, agentContext, onApply }: Props) {
+  const [prompt, setPrompt] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
 
-  // If closed, return nothing (or we could render hidden for animations, but null is simpler for now)
-  if (!isOpen) return null;
+  React.useEffect(() => {
+    HasGeminiKey().then(setHasKey).catch(() => setHasKey(false))
+  }, [])
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
-    setIsLoading(true);
-    setResult(null);
+  const contextBlob = [
+    title ? `Title: ${title}` : '',
+    agentContext ? `agent_context: ${typeof agentContext === 'string' ? agentContext : JSON.stringify(agentContext)}` : '',
+    selection ? `Selection:\n${selection}` : `Current section / document:\n${currentContent.slice(0, 4000)}`,
+  ].filter(Boolean).join('\n\n')
+
+  const run = async (kind: 'generate' | 'grammar' | 'describe') => {
+    setIsLoading(true)
+    setResult(null)
     try {
-      const generated = await GenerateContent(prompt, currentContent.slice(0, 1000));
-      setResult(generated);
+      if (kind === 'grammar') {
+        setResult(await FixGrammar(selection || currentContent))
+      } else if (kind === 'describe') {
+        setResult(await GenerateContent('Suggest a concise description and 3-6 tags as YAML snippet (description + tags only).', contextBlob))
+      } else {
+        setResult(await GenerateContent(prompt || 'Improve this technical writing.', contextBlob))
+      }
     } catch (e) {
-      console.error(e);
-      setResult("Error generating content. Please check your API key.");
+      setResult('Could not reach Gemini. Check GEMINI_API_KEY.')
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
-
-  const handleFixGrammar = async () => {
-    setIsLoading(true);
-    setResult(null);
-    try {
-      const textToFix = prompt || currentContent;
-      if (!textToFix) return;
-
-      const fixed = await FixGrammar(textToFix);
-      setResult(fixed);
-    } catch (e) {
-      console.error(e);
-      setResult("Error fixing grammar.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }
 
   return (
-    <div id="ndx-ai-assistant-panel" className="w-full h-full bg-gray-900 border-l border-gray-800 flex flex-col shrink-0">
-      <div className="p-3 border-b border-gray-800 flex justify-between items-center bg-gray-900">
-        <h3 className="text-white font-semibold flex items-center gap-2 text-sm">
-          <Sparkles className="text-indigo-400" size={16} />
-          ndxCraft AI
-        </h3>
-        <button id="ndx-ai-close-btn" onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
-          <X size={16} />
-        </button>
+    <div className="flex flex-col h-full">
+      <div className="px-3 py-2 border-b border-border flex items-center gap-2 text-sm font-medium">
+        <Sparkles size={14} className="text-fcms" /> Assistant
       </div>
-
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Instructions</label>
-          <textarea
-            id="ndx-ai-prompt-input"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what you want to write..."
-            className="w-full h-32 bg-gray-950 border border-gray-800 rounded p-3 text-sm text-gray-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none placeholder-gray-700"
-          />
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {hasKey === false && (
+          <p className="text-xs text-dirty">GEMINI_API_KEY is not set. AI actions stay offline.</p>
+        )}
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Rewrite this section for operators…"
+          className="w-full h-28 rounded-md border border-input bg-transparent p-2 text-sm"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Button size="sm" disabled={isLoading} onClick={() => run('generate')}>
+            {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Draft
+          </Button>
+          <Button size="sm" variant="secondary" disabled={isLoading} onClick={() => run('grammar')}>Grammar</Button>
+          <Button size="sm" variant="secondary" disabled={isLoading} onClick={() => run('describe')} className="col-span-2">
+            Suggest description & tags
+          </Button>
         </div>
-
-        <div className="flex gap-2">
-          <button
-            id="ndx-ai-generate-btn"
-            onClick={handleGenerate}
-            disabled={isLoading || !prompt}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded text-xs font-bold uppercase tracking-wide flex justify-center items-center gap-2"
-          >
-            {isLoading ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-            Generate
-          </button>
-          <button
-            id="ndx-ai-fix-grammar-btn"
-            onClick={handleFixGrammar}
-            disabled={isLoading}
-            className="flex-1 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white py-2 rounded text-xs font-bold uppercase tracking-wide"
-          >
-            Fix Grammar
-          </button>
-        </div>
-
         {result && (
-          <div className="mt-4 flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 border-t border-gray-800 pt-4">
+          <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Suggestion</label>
+              <span className="text-[11px] uppercase tracking-wider text-ok">Suggestion</span>
               <button
-                id="ndx-ai-insert-btn"
+                type="button"
                 onClick={() => onApply(result)}
-                className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded border border-green-900 hover:bg-green-900/50 flex items-center gap-1 transition-colors"
+                className="text-xs flex items-center gap-1 text-ok hover:underline cursor-pointer"
               >
                 <Check size={12} /> Insert
               </button>
             </div>
-            <div id="ndx-ai-result-display" className="bg-black p-3 rounded border border-gray-800 text-xs font-mono text-gray-400 max-h-60 overflow-y-auto whitespace-pre-wrap">
-              {result}
-            </div>
+            <pre className="text-xs font-mono whitespace-pre-wrap bg-raised border border-border rounded-md p-2 max-h-64 overflow-y-auto">{result}</pre>
           </div>
         )}
       </div>
-
-      <div className="p-2 text-[10px] text-gray-600 text-center border-t border-gray-800">
-        Gemini 2.5 Flash
-      </div>
     </div>
-  );
-};
-
-export default AIAssistant;
+  )
+}

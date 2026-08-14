@@ -1,1018 +1,729 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import Toolbar from './components/Toolbar';
-import Editor, { EditorHandle } from './components/Editor';
-import Preview from './components/Preview';
-import AIAssistant from './components/AIAssistant';
-import LeftSidebar from './components/LeftSidebar';
-import PreferencesModal from './components/PreferencesModal';
-import { EditorMode, LeftTab, FileNode } from './types';
-import { Sidebar, PanelRight, Circle } from 'lucide-react';
-import ProjectListModal from './components/ProjectListModal';
-import { ReadFile, SaveFile, SelectFile, SelectSaveFile, ListFiles, OpenGitClient, OpenBrowser, SaveShadowFile, GetShadowFile, SaveAppState, GetAppState, HasCorruption, RestoreBackup, GetFileTree, ClearShadowFile, UpdateProjectLastOpened, GetDefaultProjectRoot, GetPreference, AddProject, GetGitIcons } from '../wailsjs/go/main/App';
-import { WindowFullscreen, WindowUnfullscreen, WindowIsFullscreen } from '../wailsjs/runtime/runtime';
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Toaster, toast } from 'sonner'
+import { Titlebar } from './components/shell/Titlebar'
+import { Toolbar } from './components/shell/Toolbar'
+import { ActivityRail } from './components/shell/ActivityRail'
+import { StatusBar } from './components/shell/StatusBar'
+import { OutlinePanel, FilesFallback } from './components/shell/OutlinePanel'
+import { SearchPanel } from './components/shell/SearchPanel'
+import { DiagnosticsPanel } from './components/shell/DiagnosticsPanel'
+import { CommandPalette } from './components/shell/CommandPalette'
+import { EmptyState } from './components/shell/EmptyState'
+import { KitTree } from './components/sre/KitTree'
+import { FrontmatterInspector } from './components/sre/FrontmatterInspector'
+import { NewArticleDialog } from './components/sre/NewArticleDialog'
+import SitePreview from './components/sre/SitePreview'
+import SourceEditor, { SourceEditorHandle } from './components/editors/SourceEditor'
+import LocalPreview from './components/editors/LocalPreview'
+import AIAssistant from './components/AIAssistant'
+import PreferencesModal from './components/PreferencesModal'
+import ProjectListModal from './components/ProjectListModal'
+import { Button } from './components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from './components/ui/dialog'
+import { useUiStore } from './stores/ui'
+import { collectDiagnostics } from './services/diagnostics'
+import { INITIAL_CONTENT, type FileNode, type KitInfo, type SreProject, type ThemeMode } from './types'
+import {
+  ReadFile, SaveFile, SelectFile, SelectSaveFile, GetFileTree, OpenGitClient, OpenBrowser,
+  SaveShadowFile, GetShadowFile, SaveAppState, GetAppState, HasCorruption, RestoreBackup,
+  GetDefaultProjectRoot, GetPreference, AddProject, UpdateProjectLastOpened, GetGitIcons,
+  InspectSRE, SplitDocument, AssembleDocument, CreateArticle, ProbeHarness, HarnessRenderURL,
+  GitRepoStatus, RevealInFileManager, DuplicateFile, HasGeminiKey, ClearShadowFile,
+} from '../wailsjs/go/main/App'
+import { WindowFullscreen, WindowUnfullscreen, WindowIsFullscreen } from '../wailsjs/runtime/runtime'
+import type { VisualEditorHandle } from './components/editors/VisualEditor'
+import type { gitstatus, harness as harnessNs } from '../wailsjs/go/models'
 
-const INITIAL_CONTENT = `# Welcome to ndxCraft
+const VisualEditor = lazy(() => import('./components/editors/VisualEditor'))
 
-*Author Name <author@example.com>*  
-*v1.0, 2024-05-20*
-
-## Introduction
-
-ndxCraft is a modern Markdown editor built with **React, Wails, and Vite**.
-
-## Getting Started
-
-Click the **Projects** button in the toolbar to open or create a project.
-
-It features:
-
-- Real-time preview
-- Document Outline Navigation
-- AI-powered writing assistance
-- Focus modes for distraction-free writing
-
-## Editing Structure
-
-Go to the **Structure** tab on the left to drag and drop sections.
-This allows you to reorganize large documents easily.
-
-## Code Example
-
-\`\`\`typescript
-const greeting = "Hello World";
-console.log(greeting);
-\`\`\`
-
-## Conclusion
-
-Enjoy writing!
-`;
+function locate(project: SreProject | null, path: string): { kit?: KitInfo; slug?: string } {
+  if (!project?.kits || !path) return {}
+  const norm = path.replace(/\\/g, '/')
+  for (const kit of project.kits) {
+    for (const art of kit.articles || []) {
+      if (art.path.replace(/\\/g, '/') === norm) return { kit, slug: art.slug }
+    }
+    const ct = (kit.path.replace(/\\/g, '/') + '/ct/').toLowerCase()
+    if (norm.toLowerCase().startsWith(ct)) {
+      const rel = norm.slice(kit.path.replace(/\\/g, '/').length + '/ct/'.length)
+      const slug = rel.replace(/\.(md|markdown)$/i, '')
+      return { kit, slug }
+    }
+  }
+  return {}
+}
 
 const App: React.FC = () => {
-  const [content, setContent] = useState<string>(INITIAL_CONTENT);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<LeftTab>(LeftTab.FILES);
-  const [fileName, setFileName] = useState<string>('untitled.md');
-  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
-  const [fileTree, setFileTree] = useState<FileNode[]>([]);
-  const [isDirty, setIsDirty] = useState(false);
-  const [savedContent, setSavedContent] = useState<string>(INITIAL_CONTENT);
+  const ui = useUiStore()
+  const editorRef = useRef<SourceEditorHandle>(null)
+  const visualRef = useRef<VisualEditorHandle>(null)
+  const skipSource = useRef(false)
+  const rawRef = useRef(INITIAL_CONTENT)
+  const fmRef = useRef<Record<string, any>>({})
+  const bodyRef = useRef('')
+  const hasFmRef = useRef(false)
 
-  const [projectRoot, setProjectRoot] = useState<string>('');
-  const [isProjectListOpen, setIsProjectListOpen] = useState(false);
-  const [gitIconSvg, setGitIconSvg] = useState<string | undefined>(undefined);
+  const [raw, setRaw] = useState(INITIAL_CONTENT)
+  const [savedRaw, setSavedRaw] = useState(INITIAL_CONTENT)
+  const [body, setBody] = useState('')
+  const [frontMatter, setFrontMatter] = useState<Record<string, any>>({})
+  const [hasFrontMatter, setHasFrontMatter] = useState(false)
+  const [warnings, setWarnings] = useState<{ field: string; message: string }[]>([])
+  const [fileName, setFileName] = useState('untitled.md')
+  const [cursorLine, setCursorLine] = useState(1)
+  const [projectRoot, setProjectRoot] = useState('')
+  const [sre, setSre] = useState<SreProject | null>(null)
+  const [fileTree, setFileTree] = useState<FileNode[]>([])
+  const [git, setGit] = useState<gitstatus.Status | null>(null)
+  const [harness, setHarness] = useState<harnessNs.Status>({ state: 'disconnected', baseUrl: '', srePath: '', project: '', message: '' })
+  const [siteUrl, setSiteUrl] = useState('')
+  const [template, setTemplate] = useState('render')
+  const [geminiOk, setGeminiOk] = useState(false)
+  const [gitIcon, setGitIcon] = useState<string | undefined>()
+  const [newArticleKit, setNewArticleKit] = useState<KitInfo | null>(null)
+  const [pendingFile, setPendingFile] = useState<string | null>(null)
+  const [unsavedOpen, setUnsavedOpen] = useState(false)
 
-  // Unsaved Changes Dialog State
-  const [pendingFileToOpen, setPendingFileToOpen] = useState<string | null>(null);
-  const [isUnsavedDialogOpen, setIsUnsavedDialogOpen] = useState(false);
+  const { kit, slug } = useMemo(() => locate(sre, fileName), [sre, fileName])
+  const isDirty = raw !== savedRaw
+  const untitled = fileName === 'untitled.md'
 
+  rawRef.current = raw
+  fmRef.current = frontMatter
+  bodyRef.current = body
+  hasFmRef.current = hasFrontMatter
+
+  const applySplit = useCallback(async (content: string) => {
+    const doc = await SplitDocument(content)
+    setHasFrontMatter(!!doc.hasFrontMatter)
+    setFrontMatter(doc.frontMatter || {})
+    setBody(doc.body || '')
+    setWarnings((doc.warnings || []).map((w) => ({ field: w.field, message: w.message })))
+    visualRef.current?.setMarkdown(doc.body || '')
+  }, [])
+
+  const applyRaw = useCallback((content: string, syncEditor = false) => {
+    setRaw(content)
+    if (syncEditor) {
+      skipSource.current = true
+      editorRef.current?.setValue(content)
+    }
+  }, [])
 
   useEffect(() => {
-    if (projectRoot) {
-      loadFiles();
-    }
-  }, [projectRoot]);
+    applySplit(INITIAL_CONTENT)
+  }, [applySplit])
 
-  // Load App State
+  const refreshProject = useCallback(async (root: string) => {
+    if (!root) return
+    try {
+      const proj = await InspectSRE(root)
+      setSre({
+        root: proj.root,
+        name: proj.name,
+        isSre: proj.isSre,
+        kits: proj.kits || [],
+      })
+      const tree = await GetFileTree(root)
+      setFileTree(tree || [])
+      const gs = await GitRepoStatus(root)
+      setGit(gs)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const probe = useCallback(async (root: string, url: string) => {
+    try {
+      const st = await ProbeHarness(url, root)
+      setHarness(st)
+    } catch {
+      setHarness({ state: 'disconnected', baseUrl: url, srePath: '', project: '', message: 'Harness not reachable' })
+    }
+  }, [])
+
   useEffect(() => {
     const init = async () => {
       try {
-        // Load Project Root
-        let root = await GetPreference("projectRoot");
-        if (!root || root === "") {
-          // @ts-ignore
-          root = await GetDefaultProjectRoot();
+        const has = await HasCorruption()
+        if (has && window.confirm('Database corruption detected. Restore preferences from backup?')) {
+          await RestoreBackup()
+          window.location.reload()
+          return
         }
+        const themePref = await GetPreference('theme')
+        const theme: ThemeMode = themePref === 'light' || themePref === 'Light' ? 'light' : 'dark'
+        ui.setTheme(theme)
+        const auto = await GetPreference('autoSave')
+        if (typeof auto === 'boolean') ui.setAutoSave(auto)
+        const hu = await GetPreference('harnessUrl')
+        if (typeof hu === 'string' && hu) ui.setHarnessUrl(hu)
+        const iconId = await GetPreference('git_client_icon_id')
+        if (iconId) {
+          const icons = await GetGitIcons()
+          if (icons && icons[iconId as string]) setGitIcon(icons[iconId as string])
+        }
+        setGeminiOk(await HasGeminiKey())
+        let root = (await GetPreference('projectRoot')) as string
+        if (!root) root = await GetDefaultProjectRoot()
         if (root) {
-          setProjectRoot(root);
+          setProjectRoot(root)
+          await refreshProject(root)
+          await probe(root, (typeof hu === 'string' && hu) ? hu : 'http://127.0.0.1:8080')
         }
-
-        // Load Git Icon
-        const iconIdRaw = await GetPreference("git_client_icon_id");
-        if (iconIdRaw) {
-          const iconId = iconIdRaw as string;
-          try {
-            const icons = await GetGitIcons();
-            if (icons && icons[iconId]) {
-              setGitIconSvg(icons[iconId]);
-            }
-          } catch (e) { console.error(e); }
-        }
-
-        const lastFile = await GetAppState("lastFile");
-        if (lastFile && lastFile !== "") {
-          console.log("Restoring last file:", lastFile);
-          await performOpenFile(lastFile);
-
-          // Restore cursor
-          const savedPos = await GetAppState("cursorPos");
-          if (savedPos) {
-            setTimeout(() => {
-              if (editorRef.current) {
-                const pos = Number(savedPos);
-                // Saved pos is now line number (or we treat it as such for new files)
-                // If it's a large number (legacy offset), we might default to 1
-                const line = pos > 100000 ? 1 : pos;
-                editorRef.current.setCursor(line, 1);
-                editorRef.current.focus();
-              }
-            }, 100);
-          }
-        }
+        const last = await GetAppState('lastFile')
+        if (last) await openFile(last, true)
       } catch (e) {
-        console.error("Failed to restore state:", e);
+        console.error(e)
       }
-    };
-    init();
-  }, []);
+    }
+    init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Check Corruption
   useEffect(() => {
-    const check = async () => {
+    document.documentElement.classList.toggle('dark', ui.theme === 'dark')
+    document.documentElement.classList.toggle('light', ui.theme === 'light')
+  }, [ui.theme])
+
+  useEffect(() => {
+    if (!projectRoot) return
+    const t = setInterval(() => {
+      refreshProject(projectRoot)
+      probe(projectRoot, ui.harnessUrl)
+      HasGeminiKey().then(setGeminiOk).catch(() => setGeminiOk(false))
+    }, 8000)
+    return () => clearInterval(t)
+  }, [projectRoot, ui.harnessUrl, refreshProject, probe])
+
+  useEffect(() => {
+    if (!kit || !slug || harness.state !== 'matched') {
+      setSiteUrl('')
+      return
+    }
+    const tpl = template || kit.templates?.[0] || 'render'
+    HarnessRenderURL(ui.harnessUrl, kit.ns, kit.name, tpl, slug).then(setSiteUrl).catch(() => setSiteUrl(''))
+  }, [kit, slug, template, harness.state, ui.harnessUrl])
+
+  useEffect(() => {
+    if (untitled) return
+    SaveAppState('lastFile', fileName)
+    const t = setTimeout(() => SaveShadowFile(fileName, raw, isDirty), 1000)
+    return () => clearTimeout(t)
+  }, [fileName, raw, isDirty, untitled])
+
+  useEffect(() => {
+    if (!ui.autoSave || untitled || !isDirty) return
+    const t = setTimeout(async () => {
       try {
-        const has = await HasCorruption();
-        if (has) {
-          if (confirm("Database corruption detected. Do you want to restore preferences from backup?")) {
-            await RestoreBackup();
-            alert("Preferences restored. Please restart the application.");
-            window.location.reload();
-          }
-        }
-      } catch (e) { console.error(e); }
-    };
-    check();
-  }, []);
-
-  // Save App State & Shadow File
-  useEffect(() => {
-    if (fileName && fileName !== 'untitled.md') {
-      SaveAppState("lastFile", fileName);
-      SaveAppState("cursorPos", cursorPosRef.current.toString());
-
-      // Debounce shadow save
-      const timer = setTimeout(() => {
-        SaveShadowFile(fileName, content, isDirty);
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [fileName, content, isDirty]);
-
-  useEffect(() => {
-    setIsDirty(content !== savedContent);
-  }, [content, savedContent]);
-
-  // Ref to access latest content in event listener without re-binding
-  const contentRef = useRef(content);
-  useEffect(() => { contentRef.current = content; }, [content]);
-
-  // Handle messages from Preview iframe
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'preview-cursor') {
-        // Legacy support or if we re-enable reverse sync
-        // For now, AST sync is one-way (Editor -> Preview)
-        // So we ignore this or remove the handler
-      } else if (event.data.type === 'preview-edit') {
-        // Update content from preview edit
-        // WARNING: This comes from innerText, so it strips Markdown formatting!
-        // This is a "destructive" sync but fulfills the request for state management.
-        const newContent = event.data.content;
-        setContent(newContent);
-        editorRef.current?.setValue(newContent);
-      } else if (event.data.type === 'preview-tab') {
-        // Handle Tab from Preview: Switch to Code Editor
-        setActiveEditor('code');
-        setIsVisualEditEnabled(false);
-
-        const sourcePos = event.data.sourcePos;
-        let targetPos = -1;
-        const currentContent = contentRef.current;
-
-        if (sourcePos && sourcePos.line) {
-          // Calculate absolute character index from Line Number + Offset
-          const lines = currentContent.split('\n');
-          const lineIndex = sourcePos.line - 1; // Line numbers are 1-indexed
-
-          if (lineIndex >= 0 && lineIndex < lines.length) {
-            let charCount = 0;
-            for (let i = 0; i < lineIndex; i++) {
-              charCount += lines[i].length + 1; // +1 for newline
-            }
-
-            // Add the relative offset from the start of the block
-            // Note: We clamp it to the line length to be safe
-            const lineLength = lines[lineIndex].length;
-            const safeOffset = Math.min(sourcePos.offset, lineLength);
-
-            targetPos = charCount + safeOffset;
-          }
-        }
-
-        setTimeout(() => {
-          if (editorRef.current) {
-            editorRef.current.focus();
-            if (sourcePos && sourcePos.line) {
-              editorRef.current.setCursor(sourcePos.line, 1);
-              cursorPosRef.current = sourcePos.line;
-            }
-          }
-        }, 0);
-      } else if (event.data.type === 'preview-keydown') {
-        // Handle forwarded keydown from iframe
-        const key = event.data.key;
-        // Create a synthetic keyboard event and dispatch it to window
-        // Or just call the handler directly if we extract it
-        // Simpler: Just re-dispatch a new KeyboardEvent on window
-        const newEvent = new KeyboardEvent('keydown', {
-          key: key,
-          bubbles: true,
-          cancelable: true,
-          view: window
-        });
-        window.dispatchEvent(newEvent);
-      } else if (event.data.type === 'open-browser') {
-        // Handle request to open external link
-        const url = event.data.url;
-        if (url) {
-          // @ts-ignore
-          OpenBrowser(url);
-        }
+        await SaveFile(fileName, raw)
+        await SaveShadowFile(fileName, raw, false)
+        setSavedRaw(raw)
+      } catch (e) {
+        console.error(e)
       }
-    };
+    }, 2500)
+    return () => clearTimeout(t)
+  }, [raw, ui.autoSave, untitled, isDirty, fileName])
 
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const loadFiles = async () => {
+  const openFile = async (path: string, force = false) => {
+    if (!force && isDirty) {
+      setPendingFile(path)
+      setUnsavedOpen(true)
+      return
+    }
     try {
-      // @ts-ignore
-      const tree = await GetFileTree(projectRoot);
-      setFileTree(tree || []);
-    } catch (err) {
-      console.error("Failed to list files", err);
+      const disk = await ReadFile(path)
+      let text = disk
+      try {
+        const shadow = await GetShadowFile(path)
+        if (shadow?.isDirty && typeof shadow.content === 'string') text = shadow.content as string
+      } catch { /* ignore */ }
+      setSavedRaw(disk)
+      applyRaw(text, true)
+      await applySplit(text)
+      setFileName(path)
+      setUnsavedOpen(false)
+      setPendingFile(null)
+    } catch (e) {
+      toast.error('Failed to open file')
+      console.error(e)
     }
-  };
-
-  // Focus Modes
-  const [focusedPane, setFocusedPane] = useState<'none' | 'editor' | 'preview'>('none');
-
-  const editorRef = useRef<EditorHandle>(null);
-  const cursorPosRef = useRef<number>(1); // Store line number
-  const cursorSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [activeEditor, setActiveEditor] = useState<'code' | 'visual'>('code');
-  const [cursorLine, setCursorLine] = useState(1);
-  const [isVisualEditEnabled, setIsVisualEditEnabled] = useState(false);
-
-  const [focusTrigger, setFocusTrigger] = useState(0);
-
-  // App Layout Mode for True Fullscreen Editors
-  const [appLayoutMode, setAppLayoutMode] = useState<'default' | 'fullscreen-code' | 'fullscreen-visual'>('default');
-
-  // Refs for State Access in Event Listeners (Fixes Stale Closures & Dependency Issues)
-  const appLayoutModeRef = useRef(appLayoutMode);
-  const focusedPaneRef = useRef(focusedPane);
-  const activeEditorRef = useRef(activeEditor);
-
-  useEffect(() => { appLayoutModeRef.current = appLayoutMode; }, [appLayoutMode]);
-  useEffect(() => { focusedPaneRef.current = focusedPane; }, [focusedPane]);
-  useEffect(() => { activeEditorRef.current = activeEditor; }, [activeEditor]);
-
-  // Force Focus on Mount to ensure shortcuts work immediately
-  useEffect(() => {
-    window.focus();
-    // Also try to focus the container if possible
-    const container = document.getElementById('ndx-app-container');
-    if (container) container.focus();
-  }, []);
-
-  // Global Keydown Handler for "Type-Through" and Tab Toggle
-  useEffect(() => {
-    const handleGlobalKeyDown = async (e: KeyboardEvent) => {
-      // Access latest state via refs
-      const currentLayoutMode = appLayoutModeRef.current;
-      const currentFocusedPane = focusedPaneRef.current;
-      const currentActiveEditor = activeEditorRef.current;
-
-      // F11: Toggle Application Fullscreen
-      if (e.key === 'F11') {
-        e.preventDefault();
-        const isFull = await WindowIsFullscreen();
-        if (isFull) {
-          WindowUnfullscreen();
-        } else {
-          WindowFullscreen();
-        }
-        return;
-      }
-
-      // F9: Code Editor Fullscreen (True Fullscreen)
-      if (e.key === 'F9') {
-        e.preventDefault();
-        setAppLayoutMode('fullscreen-code');
-        setFocusedPane('editor');
-        setActiveEditor('code');
-        setIsVisualEditEnabled(false);
-        setActiveEditor('code');
-        setIsVisualEditEnabled(false);
-        setTimeout(() => editorRef.current?.focus(), 0);
-        return;
-      }
-
-      // F10: Visual Editor Fullscreen (True Fullscreen)
-      if (e.key === 'F10') {
-        e.preventDefault();
-        setAppLayoutMode('fullscreen-visual');
-        setFocusedPane('preview');
-        setActiveEditor('visual');
-        setIsVisualEditEnabled(true);
-        setFocusTrigger(prev => prev + 1);
-        return;
-      }
-
-      // Handle Tab Key Toggle
-      if (e.key === 'Tab') {
-        e.preventDefault(); // Prevent default tab behavior (indentation/focus change)
-        e.stopPropagation(); // Prevent other handlers
-
-        // If in Split View (Normal)
-        if (currentFocusedPane === 'none') {
-          if (currentActiveEditor === 'code') {
-            // Switch to Visual Editor and Enable Edit Mode
-            setActiveEditor('visual');
-            setIsVisualEditEnabled(true);
-            setFocusTrigger(prev => prev + 1);
-          } else {
-            // Switch to Code Editor and Disable Edit Mode (Read Only)
-            setActiveEditor('code');
-            setIsVisualEditEnabled(false);
-            setTimeout(() => editorRef.current?.focus(), 0);
-          }
-        }
-        // If in Fullscreen Mode (Swap Editors)
-        else {
-          if (currentLayoutMode === 'fullscreen-code') {
-            setAppLayoutMode('fullscreen-visual');
-            setFocusedPane('preview'); // Keep this for internal logic
-            setActiveEditor('visual');
-            setIsVisualEditEnabled(true);
-            setFocusTrigger(prev => prev + 1);
-          } else if (currentLayoutMode === 'fullscreen-visual') {
-            setAppLayoutMode('fullscreen-code');
-            setFocusedPane('editor'); // Keep this for internal logic
-            setActiveEditor('code');
-            setIsVisualEditEnabled(false);
-            setActiveEditor('code');
-            setIsVisualEditEnabled(false);
-            setTimeout(() => editorRef.current?.focus(), 0);
-          } else {
-            // Fallback for old "focusedPane" logic if any
-            if (currentFocusedPane === 'editor') {
-              setFocusedPane('preview');
-              setActiveEditor('visual');
-              setIsVisualEditEnabled(true);
-              setFocusTrigger(prev => prev + 1);
-            } else {
-              setFocusedPane('editor');
-              setActiveEditor('code');
-              setIsVisualEditEnabled(false);
-              setActiveEditor('code');
-              setIsVisualEditEnabled(false);
-              setTimeout(() => editorRef.current?.focus(), 0);
-            }
-          }
-        }
-        return;
-      }
-
-      // Escape: Exit Fullscreen Mode
-      if (e.key === 'Escape') {
-        if (currentLayoutMode !== 'default') {
-          e.preventDefault();
-          setAppLayoutMode('default');
-          setFocusedPane('none');
-          // Return focus to active editor
-          if (currentActiveEditor === 'code') {
-            setTimeout(() => editorRef.current?.focus(), 0);
-          } else {
-            setFocusTrigger(prev => prev + 1);
-          }
-        }
-        return;
-      }
-
-      // Ctrl+Z: Undo / Redo (Global)
-      if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-        // We only want to handle this if NOT in an input/iframe, OR if we want to override default behavior?
-        // Usually, inputs handle their own Undo. We want to catch it when focus is "lost" or on body/buttons.
-        const active = document.activeElement;
-        const isInput = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true';
-        const isIframe = active instanceof HTMLIFrameElement;
-
-        if (!isInput && !isIframe) {
-          e.preventDefault();
-          if (e.shiftKey) {
-            editorRef.current?.redo();
-          } else {
-            editorRef.current?.undo();
-          }
-          setTimeout(() => editorRef.current?.focus(), 0);
-          return;
-        }
-      }
-
-      // Ignore if modifier keys are pressed (Ctrl, Alt, Meta)
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-      // Ignore if focus is already in an input/textarea/contenteditable
-      const active = document.activeElement;
-      const isInput = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.getAttribute('contenteditable') === 'true';
-      // Check if active element is an iframe (our preview)
-      const isIframe = active instanceof HTMLIFrameElement;
-
-      if (isInput || isIframe) return;
-
-      // If we are typing a character (length 1)
-      if (e.key.length === 1) {
-        if (currentActiveEditor === 'code') {
-          // Monaco handles focus internally usually, but we can force it
-          editorRef.current?.focus();
-        } else if (currentActiveEditor === 'visual') {
-          // Force focus to visual editor
-          setFocusTrigger(prev => prev + 1);
-        }
-      }
-    };
-
-
-
-    window.addEventListener('keydown', handleGlobalKeyDown, true); // Use capture to intercept before others
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, []); // Empty dependency array: listener is attached ONCE and uses refs for state
-
-  // Focus Trap Safety Net
-  useEffect(() => {
-    let lastKey = '';
-    const handleKeyDown = (e: KeyboardEvent) => {
-      lastKey = e.key;
-    };
-
-    const handleFocusIn = (e: FocusEvent) => {
-      if (lastKey === 'Tab') {
-        const target = e.target as HTMLElement;
-        const isEditor = target.closest('#ndx-editor-container') !== null;
-        const isPreview = target.tagName === 'IFRAME' || target.closest('#ndx-preview-container');
-
-        // If focus lands on something that is NOT the editor or preview (e.g. buttons), bounce it back
-        if (!isEditor && !isPreview) {
-          // console.log("Blocked tab focus to:", target);
-          target.blur();
-
-          // Bounce back to active pane
-          if (activeEditor === 'code') {
-            editorRef.current?.focus();
-          } else {
-            // Focus preview iframe
-            const iframe = document.getElementById('ndx-preview-iframe');
-            iframe?.focus();
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    window.addEventListener('focusin', handleFocusIn);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, true);
-      window.removeEventListener('focusin', handleFocusIn);
-    };
-  }, [activeEditor]);
-
-  const handleCursorMove = (line: number) => {
-    setActiveEditor('code'); // Ensure code is active when moving cursor
-    cursorPosRef.current = line;
-    setCursorLine(line); // Keep state in sync for Preview
-
-    if (cursorSaveTimeoutRef.current) clearTimeout(cursorSaveTimeoutRef.current);
-    cursorSaveTimeoutRef.current = setTimeout(() => {
-      SaveAppState("cursorPos", line.toString());
-    }, 1000);
-  };
-
-  const handleInsert = (template: string, cursorOffset: number = 0) => {
-    if (template === '') {
-      if (window.confirm("Clear all content?")) {
-        setContent('');
-        editorRef.current?.setValue('');
-      }
-      return;
-    }
-
-    if (editorRef.current) {
-      editorRef.current.insertText(template);
-      editorRef.current.focus();
-    }
-  };
-
-  const handleAIApply = (text: string) => {
-    if (editorRef.current) {
-      editorRef.current.insertText(text);
-    } else {
-      const newContent = content + '\n' + text;
-      setContent(newContent);
-      editorRef.current?.setValue(newContent);
-    }
-  };
-
-  // Mock File Ops
-  // File Ops
-  const handleOpen = async () => {
-    try {
-      const filePath = await SelectFile();
-      if (filePath) {
-        // Check if file is inside current project root
-        const separator = filePath.includes('\\') ? '\\' : '/';
-        const lastSepIndex = filePath.lastIndexOf(separator);
-        const parentDir = filePath.substring(0, lastSepIndex);
-
-        let isInsideProject = false;
-        if (projectRoot && projectRoot !== "") {
-          // Simple prefix check. 
-          // Normalize slashes for comparison if needed, but usually Wails is consistent.
-          isInsideProject = filePath.startsWith(projectRoot);
-        }
-
-        if (!isInsideProject) {
-          const confirmChange = window.confirm(
-            `The selected file is outside the current project structure.\n\n` +
-            `Do you want to set the parent folder as the new Project Root?\n` +
-            `New Root: ${parentDir}`
-          );
-
-          if (confirmChange) {
-            setProjectRoot(parentDir);
-            try {
-              // @ts-ignore
-              await AddProject(parentDir);
-              // @ts-ignore
-              await UpdateProjectLastOpened(parentDir);
-            } catch (e) {
-              console.error("Failed to update project list:", e);
-            }
-          }
-        }
-
-        const text = await ReadFile(filePath);
-        setContent(text);
-        editorRef.current?.setValue(text);
-        setFileName(filePath);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  }
 
   const handleSave = async () => {
     try {
-      let filePath = fileName;
-      if (filePath === 'untitled.md') {
-        filePath = await SelectSaveFile();
-      }
-
-      if (filePath && filePath !== 'untitled.md') {
-        await SaveFile(filePath, content);
-        await SaveShadowFile(filePath, content, false);
-        setSavedContent(content); // This will set isDirty to false
-        setFileName(filePath);
-        alert('Saved!');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleOpenFile = async (path: string) => {
-    if (isDirty) {
-      setPendingFileToOpen(path);
-      setIsUnsavedDialogOpen(true);
-      return;
-    }
-    performOpenFile(path);
-  };
-
-  const performOpenFile = async (path: string) => {
-    try {
-      // If path is just a filename, assume it's in content dir (for now)
-      let fullPath = path;
-      if (!path.includes('/') && !path.includes('\\')) {
-        fullPath = "content/" + path;
-      }
-
-      // Read disk content first to establish baseline
-      const diskContent = await ReadFile(fullPath);
-      setSavedContent(diskContent);
-
-      // Check shadow
-      try {
-        const shadow = await GetShadowFile(fullPath);
-        // shadow is map[string]interface{}
-        if (shadow && shadow.content !== undefined) {
-          const shadowContent = shadow.content as string;
-          const shadowDirty = shadow.isDirty as boolean;
-
-          if (shadowDirty) {
-            console.log("Loaded dirty shadow file");
-            setContent(shadowContent);
-            editorRef.current?.setValue(shadowContent);
-            // isDirty will be true because content != savedContent (diskContent)
-          } else {
-            setContent(diskContent);
-            editorRef.current?.setValue(diskContent);
-          }
-        } else {
-          setContent(diskContent);
-          editorRef.current?.setValue(diskContent);
-        }
-      } catch (e) {
-        // Fallback to disk if shadow fails
-        console.warn("Shadow check failed, using disk:", e);
-        setContent(diskContent);
-        editorRef.current?.setValue(diskContent);
-      }
-
-      setFileName(path); // Keep just the name for display if it was from the list
-      setIsUnsavedDialogOpen(false);
-      setPendingFileToOpen(null);
-    } catch (err) {
-      console.error("Failed to open file", err);
-      alert("Failed to open file: " + err);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      // @ts-ignore - WebView2 specific
-      const path = e.dataTransfer.files[0].path || e.dataTransfer.files[0].name;
-      if (path.endsWith('.md') || path.endsWith('.markdown')) {
-        handleOpenFile(path);
-      } else {
-        alert("Only .md files are supported");
-      }
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleUnsavedDialogAction = async (action: 'save' | 'discard') => {
-    if (action === 'save') {
-      await handleSave();
-      if (pendingFileToOpen) performOpenFile(pendingFileToOpen);
-    } else {
-      // Discard changes: Clear the shadow file so we don't reload dirty state
-      if (fileName && fileName !== 'untitled.md') {
-        try {
-          await ClearShadowFile(fileName);
-        } catch (e) {
-          console.error("Failed to clear shadow file:", e);
+      if (ui.canvasMode === 'visual' || ui.canvasMode === 'split') {
+        const md = visualRef.current?.getMarkdown()
+        if (md != null && md !== body) {
+          const assembled = await AssembleDocument(frontMatter, md, hasFrontMatter)
+          applyRaw(assembled, true)
+          setBody(md)
         }
       }
-      if (pendingFileToOpen) performOpenFile(pendingFileToOpen);
-    }
-  };
-
-  const handleGitHub = async () => {
-    try {
-      // @ts-ignore
-      const installed = await OpenGitClient(projectRoot);
-      if (!installed) {
-        if (confirm("Git Client not found or protocol not supported. Defaulting to GitHub Desktop check. Download GitHub Desktop?")) {
-          // @ts-ignore
-          await OpenBrowser("https://desktop.github.com/");
-        }
+      const content = rawRef.current
+      let path = fileName
+      if (untitled) {
+        path = await SelectSaveFile()
+        if (!path) return
       }
-    } catch (err) {
-      console.error("Failed to open Git Client", err);
-      alert("Error: " + err);
+      await SaveFile(path, content)
+      await SaveShadowFile(path, content, false)
+      setSavedRaw(content)
+      setFileName(path)
+      toast.success('Saved')
+      if (projectRoot) refreshProject(projectRoot)
+    } catch (e) {
+      toast.error('Save failed')
+      console.error(e)
     }
-  };
+  }
 
-  const handleNavigate = (line: number) => {
-    if (editorRef.current) {
-      editorRef.current.setCursor(line, 1);
-      editorRef.current.focus();
+  const onSourceChange = (val: string) => {
+    if (skipSource.current) {
+      skipSource.current = false
+      setRaw(val)
+      return
     }
-  };
+    setRaw(val)
+  }
 
-
-  const handleDiscardChanges = async () => {
-    if (!isDirty) return;
-
-    if (window.confirm(`Discard all changes to "${fileName}"? This cannot be undone.`)) {
-      try {
-        if (fileName !== 'untitled.md') {
-          await ClearShadowFile(fileName);
-          await performOpenFile(fileName);
-        } else {
-          setContent(INITIAL_CONTENT);
-          editorRef.current?.setValue(INITIAL_CONTENT);
-          setSavedContent(INITIAL_CONTENT);
-          setIsDirty(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      SplitDocument(raw).then((doc) => {
+        setHasFrontMatter(!!doc.hasFrontMatter)
+        setFrontMatter(doc.frontMatter || {})
+        setWarnings((doc.warnings || []).map((w) => ({ field: w.field, message: w.message })))
+        if (useUiStore.getState().canvasMode !== 'visual') {
+          setBody(doc.body || '')
         }
-      } catch (e) {
-        console.error("Failed to discard changes:", e);
-        alert("Failed to discard changes");
+      })
+    }, 180)
+    return () => clearTimeout(t)
+  }, [raw])
+
+  const onVisualChange = (md: string) => {
+    setBody(md)
+    AssembleDocument(fmRef.current, md, hasFmRef.current).then((assembled) => applyRaw(assembled, true))
+  }
+
+  const onFrontMatterChange = (fm: Record<string, any>) => {
+    setFrontMatter(fm)
+    AssembleDocument(fm, bodyRef.current, true).then((assembled) => {
+      applyRaw(assembled, true)
+      setHasFrontMatter(true)
+    })
+  }
+
+  const handleInsert = (templateText: string) => {
+    editorRef.current?.insertText(templateText)
+    editorRef.current?.focus()
+  }
+
+  const diagnostics = useMemo(
+    () => collectDiagnostics({
+      raw, body, frontMatter, warnings, slug, filePath: untitled ? undefined : fileName, project: sre, kit,
+    }),
+    [raw, body, frontMatter, warnings, slug, fileName, sre, kit, untitled]
+  )
+
+  const words = useMemo(() => (body || raw).trim().split(/\s+/).filter(Boolean).length, [body, raw])
+
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      if (e.key === 'F11') {
+        e.preventDefault()
+        const full = await WindowIsFullscreen()
+        full ? WindowUnfullscreen() : WindowFullscreen()
+        return
+      }
+      if (e.key === 'F9') {
+        e.preventDefault()
+        ui.setFullscreen('source')
+        ui.setCanvasMode('source')
+        return
+      }
+      if (e.key === 'F10') {
+        e.preventDefault()
+        ui.setFullscreen('visual')
+        ui.setCanvasMode('visual')
+        return
+      }
+      if (e.key === 'Escape' && ui.fullscreen !== 'none') {
+        e.preventDefault()
+        ui.setFullscreen('none')
+        return
+      }
+      if (!mod) return
+      if (e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        handleSave()
+      } else if (e.key.toLowerCase() === 'p' && e.shiftKey) {
+        e.preventDefault()
+        ui.setCommandOpen(true)
+      } else if (e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        ui.setQuickOpen(true)
+      } else if (e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        ui.setCommandOpen(true)
+      } else if (e.key === '\\') {
+        e.preventDefault()
+        const order = ['source', 'visual', 'split'] as const
+        const i = order.indexOf(ui.canvasMode as typeof order[number])
+        ui.setCanvasMode(order[(i + 1) % order.length])
+      } else if (e.key === '1') { e.preventDefault(); ui.setCanvasMode('source') }
+      else if (e.key === '2') { e.preventDefault(); ui.setCanvasMode('visual') }
+      else if (e.key === '3') { e.preventDefault(); ui.setCanvasMode('split') }
+      else if (e.key === '4') { e.preventDefault(); if (harness.state === 'matched') ui.setCanvasMode('site') }
+      else if (e.key === ',') { e.preventDefault(); ui.setPreferencesOpen(true) }
+      else if (e.key.toLowerCase() === 'f' && e.shiftKey) {
+        e.preventDefault()
+        ui.setSidebarTab('search')
+      } else if (e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        ui.setLeftOpen(!useUiStore.getState().leftOpen)
+      } else if (e.key.toLowerCase() === 'i') {
+        e.preventDefault()
+        ui.setInspectorTab('ai')
+      } else if (e.key.toLowerCase() === 'o') {
+        e.preventDefault()
+        handleOpen()
       }
     }
-  };
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
-  const handleProjectList = () => {
-    setIsProjectListOpen(true);
-  };
+  useEffect(() => {
+    const onMsg = (event: MessageEvent) => {
+      if (event.data.type === 'preview-keydown') {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: event.data.key, bubbles: true }))
+      } else if (event.data.type === 'open-browser' && event.data.url) {
+        OpenBrowser(event.data.url)
+      }
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [])
+
+  const handleOpen = async () => {
+    const path = await SelectFile()
+    if (path) await openFile(path)
+  }
 
   const handleSelectProject = async (path: string) => {
-    setProjectRoot(path);
-    setIsProjectListOpen(false);
-    try {
-      // @ts-ignore
-      await UpdateProjectLastOpened(path);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+    setProjectRoot(path)
+    ui.setProjectListOpen(false)
+    await AddProject(path)
+    await UpdateProjectLastOpened(path)
+    await refreshProject(path)
+    await probe(path, ui.harnessUrl)
+  }
 
-  const handleUndo = () => {
-    if (editorRef.current) {
-      editorRef.current.undo();
-      editorRef.current.focus();
-    }
-  };
+  const articles = useMemo(
+    () => (sre?.kits || []).flatMap((k) => (k.articles || []).map((art) => ({ kit: k, art }))),
+    [sre]
+  )
 
-  const handleRedo = () => {
-    if (editorRef.current) {
-      editorRef.current.redo();
-      editorRef.current.focus();
-    }
-  };
+  const paletteActions = [
+    { id: 'save', label: 'Save', hint: 'Ctrl+S', run: () => handleSave() },
+    { id: 'open', label: 'Open file', hint: 'Ctrl+O', run: () => handleOpen() },
+    { id: 'projects', label: 'Open project…', run: () => ui.setProjectListOpen(true) },
+    { id: 'new', label: 'New article…', run: () => ui.setNewArticleOpen(true) },
+    { id: 'source', label: 'Source mode', hint: 'Ctrl+1', run: () => ui.setCanvasMode('source') },
+    { id: 'visual', label: 'Visual mode', hint: 'Ctrl+2', run: () => ui.setCanvasMode('visual') },
+    { id: 'split', label: 'Split preview', hint: 'Ctrl+3', run: () => ui.setCanvasMode('split') },
+    { id: 'site', label: 'Site preview', hint: 'Ctrl+4', run: () => ui.setCanvasMode('site') },
+    { id: 'inspector', label: 'Toggle inspector', run: () => ui.setInspectorOpen(!useUiStore.getState().inspectorOpen) },
+    { id: 'prefs', label: 'Preferences', hint: 'Ctrl+,', run: () => ui.setPreferencesOpen(true) },
+    { id: 'copy-slug', label: 'Copy slug', run: () => slug && navigator.clipboard.writeText(slug) },
+    { id: 'copy-fcms', label: 'Copy /fcms path', run: () => kit && slug && navigator.clipboard.writeText(`/fcms/${kit.ns}/${kit.name}/${slug}`) },
+    { id: 'reveal', label: 'Reveal in file manager', run: () => !untitled && RevealInFileManager(fileName) },
+    { id: 'table', label: 'Insert GFM table', run: () => handleInsert('\n| A | B |\n| --- | --- |\n|  |  |\n') },
+  ]
+
+  const showCanvas = ui.fullscreen === 'none'
+  const showSource = ui.fullscreen === 'source' || (showCanvas && (ui.canvasMode === 'source' || ui.canvasMode === 'split'))
+  const showVisual = ui.fullscreen === 'visual' || (showCanvas && ui.canvasMode === 'visual')
+  const showPreview = showCanvas && ui.canvasMode === 'split'
+  const showSite = showCanvas && ui.canvasMode === 'site'
+
+  const templates = kit?.templates?.length ? kit.templates : ['render']
 
   return (
     <div
       id="ndx-app-container"
-      className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden font-sans"
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
+      className={`flex flex-col h-screen bg-app text-foreground overflow-hidden ${ui.theme === 'dark' ? 'dark' : ''}`}
     >
-      {/* Top Bar */}
-      {appLayoutMode === 'default' && (
-        <div id="ndx-top-bar" className="h-6 bg-black flex items-center px-4 justify-between border-b border-gray-800 select-none z-20 text-[10px] text-gray-600">
-          <div className="flex items-center gap-3">
-            <button
-              id="ndx-toggle-sidebar-btn"
-              onClick={() => setLeftPanelOpen(!leftPanelOpen)}
-              className={`hover:text-gray-300 transition-colors ${leftPanelOpen ? 'text-indigo-400' : ''}`}
-              title="Toggle Sidebar"
-              tabIndex={-1}
-            >
-              <Sidebar size={12} />
-            </button>
-
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-gray-400 tracking-tight">
-                ndxCraft
-              </span>
-              <div className="h-3 w-px bg-gray-800" />
-              <div
-                id="ndx-current-file-name"
-                className="flex items-center gap-2 cursor-pointer hover:bg-gray-900 px-2 py-0.5 rounded transition-colors"
-                title="Double-click to discard changes and revert to saved"
-                onDoubleClick={handleDiscardChanges}
-              >
-                {isDirty && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_4px_rgba(245,158,11,0.5)] animate-pulse" />
-                )}
-                <span id="ndx-current-file-name-text" className={`truncate max-w-[300px] ${isDirty ? 'text-amber-500' : 'text-gray-500'}`}>
-                  {fileName}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              id="ndx-toggle-assistant-btn"
-              onClick={() => setRightPanelOpen(!rightPanelOpen)}
-              className={`flex items-center gap-1 hover:text-gray-300 transition-colors ${rightPanelOpen ? 'text-indigo-400' : ''}`}
-              title="Toggle Assistant"
-              tabIndex={-1}
-            >
-              <PanelRight size={12} />
-              <span className="hidden sm:inline">Assistant</span>
-            </button>
-          </div>
-        </div>
+      <Toaster theme={ui.theme} position="bottom-right" />
+      {ui.fullscreen === 'none' && (
+        <>
+          <Titlebar
+            projectName={sre?.name || projectRoot || 'ndxCraft'}
+            isSre={!!sre?.isSre}
+            kitDir={kit?.dir}
+            slug={slug}
+            fileName={fileName}
+            isDirty={isDirty}
+          />
+          <Toolbar
+            onInsert={handleInsert}
+            onOpen={handleOpen}
+            onSave={handleSave}
+            onUndo={() => editorRef.current?.undo()}
+            onRedo={() => editorRef.current?.redo()}
+            onNewArticle={() => ui.setNewArticleOpen(true)}
+            onProjects={() => ui.setProjectListOpen(true)}
+            onGit={async () => {
+              const ok = await OpenGitClient(projectRoot)
+              if (!ok) OpenBrowser('https://desktop.github.com/')
+            }}
+            gitIcon={gitIcon}
+            canSite={harness.state === 'matched'}
+          />
+        </>
       )}
 
-      {appLayoutMode === 'default' && (
-        <Toolbar
-          onInsert={handleInsert}
-          onAIRequest={() => setRightPanelOpen(true)}
-          onOpen={handleOpen}
-          onSave={handleSave}
-          onSettings={() => setIsPreferencesOpen(true)}
-          onGitHub={handleGitHub}
-          onProjectList={handleProjectList}
-          gitIcon={gitIconSvg}
-        />
-      )}
-
-      {/* Main Workspace */}
-      <div id="ndx-main-workspace" className="flex-1 flex overflow-hidden relative">
-        <PanelGroup direction="horizontal" autoSaveId="ndx-main-layout">
-
-          {/* Left Sidebar Panel */}
-          {appLayoutMode === 'default' && leftPanelOpen && (
+      <div className="flex-1 flex overflow-hidden">
+        {ui.fullscreen === 'none' && <ActivityRail diagnosticCount={diagnostics.length} />}
+        <PanelGroup direction="horizontal" autoSaveId="ndx-studio">
+          {ui.fullscreen === 'none' && ui.leftOpen && (
             <>
-              <Panel defaultSize={20} minSize={10} maxSize={40} id="left-panel" order={1}>
-                <LeftSidebar
-                  isOpen={leftPanelOpen}
-                  activeTab={activeLeftTab}
-                  onTabChange={setActiveLeftTab}
-                  content={content}
-                  onContentChange={(newContent) => {
-                    setContent(newContent);
-                    editorRef.current?.setValue(newContent);
-                  }}
-                  fileTree={fileTree}
-                  onFileClick={handleOpenFile}
-                  onNavigate={handleNavigate}
-                />
+              <Panel defaultSize={20} minSize={14} maxSize={36} id="left">
+                <div className="h-full bg-panel border-r border-border flex flex-col">
+                  <div className="h-8 px-3 flex items-center text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                    {ui.sidebarTab}
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {ui.sidebarTab === 'files' && (
+                      sre?.isSre ? (
+                        <KitTree
+                          kits={sre.kits}
+                          activePath={untitled ? undefined : fileName}
+                          gitFiles={git?.files}
+                          onOpen={(p) => openFile(p)}
+                          onNewArticle={(k) => { setNewArticleKit(k || null); ui.setNewArticleOpen(true) }}
+                          onDuplicate={async (p) => {
+                            const dest = await DuplicateFile(p)
+                            toast.success('Duplicated')
+                            refreshProject(projectRoot)
+                            openFile(dest)
+                          }}
+                          onCopySlug={(s) => { navigator.clipboard.writeText(s); toast.success('Slug copied') }}
+                          onReveal={(p) => RevealInFileManager(p)}
+                        />
+                      ) : (
+                        <FilesFallback fileTree={fileTree} onFileClick={(p) => openFile(p)} />
+                      )
+                    )}
+                    {ui.sidebarTab === 'outline' && (
+                      <OutlinePanel
+                        content={raw}
+                        onContentChange={(c) => { applyRaw(c, true); applySplit(c) }}
+                        onNavigate={(line) => editorRef.current?.setCursor(line, 1)}
+                      />
+                    )}
+                    {ui.sidebarTab === 'search' && (
+                      <SearchPanel root={projectRoot} onOpen={(p, line) => { openFile(p); if (line) setTimeout(() => editorRef.current?.setCursor(line, 1), 50) }} />
+                    )}
+                    {ui.sidebarTab === 'diagnostics' && (
+                      <DiagnosticsPanel items={diagnostics} onNavigate={(line) => editorRef.current?.setCursor(line, 1)} />
+                    )}
+                  </div>
+                </div>
               </Panel>
-              <PanelResizeHandle className="w-1 bg-gray-800 hover:bg-indigo-500 transition-colors z-10" />
+              <PanelResizeHandle className="w-1 bg-border hover:bg-fcms transition-colors" />
             </>
           )}
 
-          {/* Center Canvas Panel */}
-          <Panel order={2} id="center-panel" minSize={20}>
-            <PanelGroup direction="horizontal" autoSaveId="ndx-center-layout">
-
-              {/* Editor Panel */}
-              {(!focusedPane || focusedPane === 'editor' || focusedPane === 'none') && appLayoutMode !== 'fullscreen-visual' && (
-                <Panel order={1} id="editor-panel" minSize={10} defaultSize={50} className="flex flex-col">
-                  <div id="ndx-editor-pane" className="flex-1 flex flex-col min-w-0 h-full">
-                    <Editor
+          <Panel id="center" minSize={30}>
+            {untitled && !isDirty && ui.fullscreen === 'none' && ui.canvasMode !== 'visual' ? (
+              <EmptyState
+                isSre={!!sre?.isSre}
+                onOpenProject={() => ui.setProjectListOpen(true)}
+                onNewArticle={() => ui.setNewArticleOpen(true)}
+              />
+            ) : (
+              <PanelGroup direction="horizontal" autoSaveId="ndx-canvas">
+                {showSource && (
+                  <Panel minSize={20} defaultSize={50}>
+                    <SourceEditor
                       ref={editorRef}
-                      defaultValue={INITIAL_CONTENT}
-                      onChange={setContent}
-                      isFocused={focusedPane === 'editor' || appLayoutMode === 'fullscreen-code'}
-                      onToggleFocus={() => {
-                        if (appLayoutMode === 'fullscreen-code') {
-                          setAppLayoutMode('default');
-                          setFocusedPane('none');
-                        } else {
-                          setFocusedPane(focusedPane === 'editor' ? 'none' : 'editor');
-                        }
-                      }}
-                      onCursorChange={handleCursorMove}
+                      key={fileName}
+                      defaultValue={raw}
+                      onChange={onSourceChange}
+                      isFocused={ui.fullscreen === 'source'}
+                      onToggleFocus={() => ui.setFullscreen(ui.fullscreen === 'source' ? 'none' : 'source')}
+                      onCursorChange={setCursorLine}
+                      theme={ui.theme}
                     />
-                  </div>
-                </Panel>
-              )}
-
-              {/* Resizer between Editor and Preview */}
-              {/* Only show handle if BOTH are visible */}
-              {((!focusedPane || focusedPane === 'editor' || focusedPane === 'none') && appLayoutMode !== 'fullscreen-visual') &&
-                ((!focusedPane || focusedPane === 'preview' || focusedPane === 'none') && appLayoutMode !== 'fullscreen-code') && (
-                  <PanelResizeHandle className="w-1 bg-gray-800 hover:bg-indigo-500 transition-colors z-10" />
+                  </Panel>
                 )}
-
-              {/* Preview Pane */}
-              {(!focusedPane || focusedPane === 'preview' || focusedPane === 'none') && appLayoutMode !== 'fullscreen-code' && (
-                <Panel order={2} id="preview-panel" minSize={10} defaultSize={50} className="flex flex-col">
-                  <div id="ndx-preview-pane" className="flex-1 flex flex-col min-w-0 h-full bg-white">
-                    <Preview
-                      content={content}
-                      isFocused={focusedPane === 'preview' || appLayoutMode === 'fullscreen-visual'}
-                      onToggleFocus={() => {
-                        if (appLayoutMode === 'fullscreen-visual') {
-                          setAppLayoutMode('default');
-                          setFocusedPane('none');
-                        } else {
-                          setFocusedPane(focusedPane === 'preview' ? 'none' : 'preview');
-                        }
-                      }}
+                {showSource && showPreview && <PanelResizeHandle className="w-1 bg-border hover:bg-fcms" />}
+                {showPreview && (
+                  <Panel minSize={20} defaultSize={50}>
+                    <LocalPreview
+                      content={raw}
+                      isFocused={false}
+                      onToggleFocus={() => ui.setFullscreen('visual')}
                       cursorLine={cursorLine}
-                      isActive={activeEditor === 'visual'}
-                      onActivate={() => setActiveEditor('visual')}
-                      focusTrigger={focusTrigger}
-                      isEditing={isVisualEditEnabled}
-                      onToggleEditing={() => setIsVisualEditEnabled(!isVisualEditEnabled)}
                     />
-                  </div>
-                </Panel>
-              )}
-
-            </PanelGroup>
+                  </Panel>
+                )}
+                {showVisual && (
+                  <Panel minSize={30}>
+                    <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading visual editor…</div>}>
+                      <VisualEditor key={fileName} ref={visualRef} markdown={body} onChange={onVisualChange} />
+                    </Suspense>
+                  </Panel>
+                )}
+                {showSite && (
+                  <Panel minSize={30}>
+                    <SitePreview url={siteUrl} matched={harness.state === 'matched'} message={harness.message} />
+                  </Panel>
+                )}
+              </PanelGroup>
+            )}
           </Panel>
 
-          {/* Right Panel (AIAssistant) */}
-          {rightPanelOpen && (
+          {ui.fullscreen === 'none' && ui.inspectorOpen && (
             <>
-              <PanelResizeHandle className="w-1 bg-gray-800 hover:bg-indigo-500 transition-colors z-10" />
-              <Panel defaultSize={20} minSize={10} maxSize={40} id="right-panel" order={3}>
-                <div className="h-full w-full bg-gray-900">
-                  <AIAssistant
-                    isOpen={rightPanelOpen}
-                    onClose={() => setRightPanelOpen(false)}
-                    currentContent={content}
-                    onApply={handleAIApply}
-                  />
+              <PanelResizeHandle className="w-1 bg-border hover:bg-fcms" />
+              <Panel defaultSize={22} minSize={16} maxSize={36} id="right">
+                <div className="h-full bg-panel border-l border-border flex flex-col">
+                  <div className="h-8 flex border-b border-border">
+                    {(['frontmatter', 'ai'] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => ui.setInspectorTab(tab)}
+                        className={`flex-1 text-[11px] uppercase tracking-wider cursor-pointer ${ui.inspectorTab === tab ? 'text-foreground border-b-2 border-fcms' : 'text-muted-foreground'}`}
+                      >
+                        {tab === 'frontmatter' ? 'Frontmatter' : 'Assistant'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {ui.inspectorTab === 'frontmatter' ? (
+                      <FrontmatterInspector
+                        frontMatter={frontMatter}
+                        hasFrontMatter={hasFrontMatter}
+                        warnings={warnings}
+                        kit={kit}
+                        slugFromPath={slug}
+                        templates={templates}
+                        template={template}
+                        onTemplateChange={setTemplate}
+                        onChange={onFrontMatterChange}
+                      />
+                    ) : (
+                      <AIAssistant
+                        currentContent={body || raw}
+                        selection={editorRef.current?.getSelection() || ''}
+                        title={String(frontMatter.title || '')}
+                        agentContext={frontMatter.agent_context}
+                        onApply={(text) => editorRef.current?.insertText(text)}
+                      />
+                    )}
+                  </div>
                 </div>
               </Panel>
             </>
           )}
-
         </PanelGroup>
       </div>
 
-      {/* Footer */}
-      <div id="ndx-footer" className="h-6 bg-black border-t border-gray-800 flex items-center px-4 text-[10px] text-gray-600 justify-between z-20">
-        <div className="flex gap-4">
-          <span>{content.length} chars</span>
-          <span>{content.split('\n').length} lines</span>
-        </div>
-        <div className="flex gap-2">
-          <span>Structure: {activeLeftTab === LeftTab.OUTLINE ? 'Active' : 'Hidden'}</span>
-          <span className={process.env.API_KEY ? 'text-green-900' : 'text-red-900'}>
-            API: {process.env.API_KEY ? 'CONNECTED' : 'MISSING'}
-          </span>
-        </div>
-      </div>
+      {ui.fullscreen === 'none' && (
+        <StatusBar
+          kitDir={kit?.dir}
+          slug={slug}
+          chars={raw.length}
+          lines={raw.split('\n').length}
+          words={words}
+          diagnosticCount={diagnostics.length}
+          harnessState={harness.state}
+          harnessMessage={harness.message}
+          gitBranch={git?.branch}
+          gitDirty={git?.dirty}
+          geminiOk={geminiOk}
+        />
+      )}
+
+      <CommandPalette
+        open={ui.commandOpen || ui.quickOpen}
+        mode={ui.quickOpen && !ui.commandOpen ? 'quick' : 'command'}
+        articles={articles}
+        actions={paletteActions}
+        onClose={() => { ui.setCommandOpen(false); ui.setQuickOpen(false) }}
+        onOpenFile={(p) => openFile(p)}
+      />
+
+      <NewArticleDialog
+        open={ui.newArticleOpen}
+        kits={sre?.kits || []}
+        initialKit={newArticleKit}
+        onClose={() => ui.setNewArticleOpen(false)}
+        onCreate={async (k, sl, title, desc, tags) => {
+          const path = await CreateArticle(k.path, sl, title, desc, tags)
+          await refreshProject(projectRoot)
+          await openFile(path, true)
+          toast.success('Article created')
+        }}
+      />
 
       <PreferencesModal
-        isOpen={isPreferencesOpen}
-        onClose={() => setIsPreferencesOpen(false)}
+        isOpen={ui.preferencesOpen}
+        onClose={() => ui.setPreferencesOpen(false)}
         projectRoot={projectRoot}
-        onProjectRootChange={setProjectRoot}
+        onProjectRootChange={async (p) => { setProjectRoot(p); await refreshProject(p) }}
         onPreferencesChanged={async () => {
-          // Reload Git Icon
-          const iconIdRaw = await GetPreference("git_client_icon_id");
-          if (iconIdRaw) {
-            const iconId = iconIdRaw as string;
-            try {
-              const icons = await GetGitIcons();
-              if (icons && icons[iconId]) {
-                setGitIconSvg(icons[iconId]);
-              } else if (iconId === 'default') {
-                setGitIconSvg(undefined);
-              }
-            } catch (e) { console.error(e); }
+          const themePref = await GetPreference('theme')
+          ui.setTheme(themePref === 'light' ? 'light' : 'dark')
+          const auto = await GetPreference('autoSave')
+          if (typeof auto === 'boolean') ui.setAutoSave(auto)
+          const hu = await GetPreference('harnessUrl')
+          if (typeof hu === 'string' && hu) {
+            ui.setHarnessUrl(hu)
+            if (projectRoot) probe(projectRoot, hu)
+          }
+          const iconId = await GetPreference('git_client_icon_id')
+          if (iconId) {
+            const icons = await GetGitIcons()
+            setGitIcon(icons?.[iconId as string])
           }
         }}
       />
 
-      <Dialog open={isUnsavedDialogOpen} onOpenChange={setIsUnsavedDialogOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800 text-gray-100">
+      <ProjectListModal
+        isOpen={ui.projectListOpen}
+        onClose={() => ui.setProjectListOpen(false)}
+        onSelectProject={handleSelectProject}
+      />
+
+      <Dialog open={unsavedOpen} onOpenChange={setUnsavedOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Unsaved Changes</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              You have unsaved changes in <strong>{fileName}</strong>. What would you like to do?
-            </DialogDescription>
+            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogDescription>Save {fileName} before opening another file?</DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setIsUnsavedDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => handleUnsavedDialogAction('discard')}>Discard</Button>
-            <Button onClick={() => handleUnsavedDialogAction('save')}>Save & Open</Button>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUnsavedOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (!untitled) await ClearShadowFile(fileName)
+              setSavedRaw(raw)
+              if (pendingFile) openFile(pendingFile, true)
+            }}>Discard</Button>
+            <Button onClick={async () => { await handleSave(); if (pendingFile) openFile(pendingFile, true) }}>Save & open</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ProjectListModal
-        isOpen={isProjectListOpen}
-        onClose={() => setIsProjectListOpen(false)}
-        onSelectProject={handleSelectProject}
-      />
     </div>
-  );
-};
+  )
+}
 
-export default App;
+export default App

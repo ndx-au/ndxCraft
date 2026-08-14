@@ -1,74 +1,50 @@
 # ndxCraft User Guide
 
-Welcome to **ndxCraft**, your distraction-free [Markdown](https://commonmark.org) editor. This guide will help you get started with the features and workflow of the application.
+ndxCraft is the desktop authoring studio for Sentinel **fcms**: git-native Markdown in a kit’s `ct/` directory.
 
-## Getting Started
+## Open an SRE
 
-### Project Management
+1. **Projects** (folder icon) → add the SRE root (the folder that contains `sentinel.yaml`).
+2. The Files rail lists **kits**, then **Content** with slugs — not a dump of Lua modules and skill twins.
+3. Generic folders without `sentinel.yaml` still work as a plain Markdown project.
 
-ndxCraft works with **Projects**, which are simply folders on your computer containing your Markdown files.
+## Write
 
-1. **Open a Project**: Click the **Projects** button (Folder icon) in the top toolbar.
-2. **Select a Folder**: Choose an existing project or click "Add Project" to mount a new folder from your system.
-3. **File Navigation**: Once a project is loaded, use the **Files** tab in the left sidebar to browse and open files.
+- **Source** — the full file, including YAML frontmatter. Tab indents.
+- **Visual** — the Markdown body only. Frontmatter stays in the inspector so YAML cannot be destroyed.
+- **Split** — source plus local preview.
+- **Site** — live `GET /fcms/render/{ns}/{name}/{template}/{slug}` when a Sentinel harness is running **this** SRE (`GET /hl/runtime`).
 
-### The Interface
+Save writes the file on disk. Git is how you publish. The harness watcher reloads `ct/` — ndxCraft does not `PUT /fcms` for ordinary saves.
 
-- **Toolbar**: Quick access to common formatting actions (Bold, Italic, Headings, etc.) and file operations.
-- **Editor (Left/Center)**: The main writing area. It supports syntax highlighting for Markdown.
-- **Preview (Right)**: A real-time rendering of your document.
-- **Sidebar (Left)**:
-  - **Files**: Your project file tree.
-  - **Structure**: A visual outline of your document. You can drag and drop sections here to reorder your content!
+## Frontmatter
 
-## Writing & Editing
+The inspector maps Sentinel’s known fields:
 
-### Formatting
+- `title` (recommended)
+- `slug` (lowercase / hyphenated path)
+- `date` (`YYYY-MM-DD` or RFC3339)
+- `description`, `tags`
+- `agent_context` (JSON; available to Lua, stripped from public `/fcms` JSON)
 
-You can type Markdown syntax directly or use the toolbar buttons.
+Empty documents stay without a `---` block until you fill a field. Key order is stable so diffs stay boring.
 
-- **Bold**: `**text**`
-- *Italic*: `*text*`
-- `Monospace`: `` `text` ``
-- Headings: `## Heading Level 2`
+## New article
 
-### Distraction-Free Mode
+Command palette → **New article…**, or right-click a kit. Pick kit, slug, title, tags. Files land at `{kit}/ct/{slug}.md`.
 
-- Press `F11` to toggle the entire app fullscreen.
-- Press `F9` to focus solely on the **Code Editor**.
-- Press `F10` to focus solely on the **Preview**.
+## Command palette
 
-### Visual Editing (Experimental)
+`Ctrl+K` runs commands. `Ctrl+P` jumps to an article. Copy slug or `/fcms/{ns}/{name}/{slug}` from the palette or the kit context menu.
 
-You can make quick text edits directly in the Preview pane!
+## Diagnostics
 
-1. Toggle "Visual Edit" mode (Edit icon in the preview header).
-2. Click and type directly in the preview.
-3. Changes are synced back to the code editor.
+The rail badge lists missing titles, bad dates, invalid or duplicate slugs, heading-level skips, and likely-broken relative `.md` links.
 
-## Advanced Features
+## AI
 
-### AI Assistant
+The inspector’s Assistant tab uses the current section, title, and `agent_context`. Set `GEMINI_API_KEY`. Offline is a quiet status — not a red banner.
 
-Click the **AI Assistant** button (or press `Ctrl+I`) to open the side panel. You can ask it to:
+## Harness
 
-- Fix grammar
-- Generate content
-- Summarize text
-
-### Document Structure
-
-The **Structure** tab parses your Markdown headers.
-
-- **Navigate**: Click a header to jump to that section.
-- **Reorder**: Drag a header to move the entire section (including its content) to a new location.
-
-## Shortcuts
-
-| Key | Action |
-| --- | --- |
-| `Ctrl+S` | Save File |
-| `Ctrl+O` | Open File |
-| `F9` | Fullscreen Editor |
-| `F10` | Fullscreen Preview |
-| `Tab` | Switch focus between Editor and Preview |
+Preferences → Theme → **Harness URL** (default `http://127.0.0.1:8080`). Status bar shows `disconnected`, `mismatched`, or `matched`.

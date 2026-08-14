@@ -1,39 +1,20 @@
 # ndxCraft
 
-[![Screenshot](Screenshot.png)](https://github.com/ndx-video/ndxCraft/blob/main/Screenshot.png)
-
 [![Built with Wails](https://img.shields.io/badge/Built%20with-Wails-red)](https://wails.io)
 [![Frontend React](https://img.shields.io/badge/Frontend-React-blue)](https://react.dev)
-[![Language Markdown](https://img.shields.io/badge/Language-Markdown-orange)](https://commonmark.org)
 
-**ndxCraft** is a modern, distraction-free Markdown editor designed for technical writers and documentation enthusiasts. Built with the power of Go (Wails) and the flexibility of React, it provides a seamless writing experience with real-time previewing and powerful project management tools.
+**ndxCraft** is an fcms authoring studio for Sentinel SREs. Technical writers open a Sentinel Runtime Environment, edit git-native Markdown in kit `ct/` trees, and optionally preview the live harness render.
 
 ## Features
 
-### Core Experience
+- **SRE-aware tree** — kits, slugs, and `ct/` content instead of a junk drawer of files
+- **Dual editing** — Monaco source (full file, including YAML) and MDXEditor visual (body only)
+- **Frontmatter inspector** — title, slug, date, tags, `agent_context`, ordered YAML that does not churn git diffs
+- **Hybrid preview** — local Markdown preview, plus Site mode against `/fcms/render` when the harness serves this SRE
+- **Command palette** — `Ctrl+K` / `Ctrl+P`, diagnostics, search, git badges
+- **Keyboard** — Tab indents. `Ctrl+S` saves. `Ctrl+1…4` switch Source / Visual / Split / Site
 
-- **Real-time Preview**: See your Markdown render instantly as you type.
-- **Distraction-Free Writing**:
-  - **Focus Mode**: Collapse sidebars to focus purely on your content.
-  - **Fullscreen Modes**: Dedicated fullscreen modes for both Code and Visual editors (`F9` / `F10`).
-- **Modern UI**: A sleek, dark-themed interface built with Tailwind CSS and Shadcn UI.
-
-### Project Management
-
-- **Project List**: Easily manage multiple documentation projects. Mount folders from your host system and switch between them instantly.
-- **File Explorer**: Integrated file tree for navigating your project structure.
-- **GitHub Integration**: Open your current project directly in GitHub Desktop with a single click.
-
-### AI Assistance
-
-- **Smart Writing Companion**: Integrated AI assistant (powered by Gemini) to help draft content, fix grammar, or brainstorm ideas.
-- **Context Aware**: The assistant understands your current document context.
-
-### Advanced Tools
-
-- **Document Structure**: Visual outline view (AST or Block mode) to navigate and reorder large documents via drag-and-drop.
-- **Custom CSS**: Bring your own stylesheets to customize the preview rendering.
-- **Shadow Save**: Automatic shadow backups protect your work from accidental loss or crashes.
+Generic Markdown folders still open when `sentinel.yaml` is absent.
 
 ## Installation
 
@@ -41,55 +22,40 @@
 
 - **Go**: v1.21 or newer
 - **Node.js**: v18 or newer
-- **Wails**: Install via `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- **Wails**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 
 ### Build from Source
 
-Clone the repository:
-
 ```bash
-git clone https://github.com/yourusername/ndxCraft.git
+git clone https://github.com/ndx-video/ndxCraft.git
 cd ndxCraft
-```
-
-Install frontend dependencies:
-
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-Run in Development Mode:
-
-```bash
+cd frontend && npm install && cd ..
 wails dev
 ```
 
-Build for Production:
+Production:
 
 ```bash
 wails build
 ```
 
-## Keyboard Shortcuts
+## Keyboard
 
 | Key | Action |
 | --- | --- |
-| `F11` | Toggle App Fullscreen |
-| `F9` | Toggle Code Editor Fullscreen |
-| `F10` | Toggle Preview Fullscreen |
-| `Tab` | Switch focus between Editor and Preview |
-| `Ctrl+S` | Save File |
+| `Tab` | Indent in the source editor |
+| `Ctrl+S` | Save |
+| `Ctrl+P` | Quick open |
+| `Ctrl+K` / `Ctrl+Shift+P` | Command palette |
+| `Ctrl+1…4` | Source / Visual / Split / Site |
+| `Ctrl+\\` | Cycle source / visual / split |
+| `F9` / `F10` | Source / visual fullscreen |
+| `Ctrl+,` | Preferences |
 
-## Technology Stack
+## Stack
 
-- **Backend**: Go (Wails framework)
-- **Frontend**: React, TypeScript, Vite
-- **Styling**: Tailwind CSS, Shadcn UI
-- **Editor**: Monaco Editor (via React wrapper)
-- **Database**: SQLite (modernc.org/sqlite)
+Go (Wails) · React · Monaco · MDXEditor · Tailwind · shadcn/ui
 
 ## License
 
-This project is licensed under the MIT License.
+MIT

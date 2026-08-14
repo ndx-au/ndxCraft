@@ -1,5 +1,3 @@
-import { StructureNode } from '../types';
-
 export interface SectionBlock {
   title: string;
   level: number;

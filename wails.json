@@ -7,6 +7,11 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "info": {
+    "productName": "ndxCraft",
+    "productVersion": "0.2.0",
+    "comments": "fcms authoring studio for Sentinel SREs"
+  },
   "author": {
     "name": "Terence Kearns",
     "email": "info@terencekearns.com"

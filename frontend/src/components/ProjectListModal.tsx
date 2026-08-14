@@ -61,7 +61,7 @@ const ProjectListModal: React.FC<ProjectListModalProps> = ({ isOpen, onClose, on
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[600px] bg-gray-900 border-gray-800 text-gray-100">
+        <DialogContent className="sm:max-w-[600px] bg-card">
         <DialogHeader>
           <DialogTitle>Select Project</DialogTitle>
         </DialogHeader>
@@ -70,7 +70,7 @@ const ProjectListModal: React.FC<ProjectListModalProps> = ({ isOpen, onClose, on
             <div
               key={p.path}
               onClick={() => onSelectProject(p.path)}
-              className="group relative flex flex-col items-center justify-center p-4 rounded-lg border border-gray-800 bg-gray-800/50 hover:bg-gray-800 hover:border-indigo-500/50 cursor-pointer transition-all aspect-square"
+              className="group relative flex flex-col items-center justify-center p-4 rounded-lg border border-border bg-raised hover:border-fcms/50 cursor-pointer transition-all aspect-square"
               title={p.path}
             >
               <button

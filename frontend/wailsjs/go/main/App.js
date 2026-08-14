@@ -10,12 +10,28 @@ export function AddProject(arg1) {
   return window['go']['main']['App']['AddProject'](arg1);
 }
 
+export function AssembleDocument(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AssembleDocument'](arg1, arg2, arg3);
+}
+
 export function ClearShadowFile(arg1) {
   return window['go']['main']['App']['ClearShadowFile'](arg1);
 }
 
+export function CreateArticle(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['CreateArticle'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function CreateFolder(arg1) {
+  return window['go']['main']['App']['CreateFolder'](arg1);
+}
+
 export function DeleteGitIcon(arg1) {
   return window['go']['main']['App']['DeleteGitIcon'](arg1);
+}
+
+export function DuplicateFile(arg1) {
+  return window['go']['main']['App']['DuplicateFile'](arg1);
 }
 
 export function FixGrammar(arg1) {
@@ -58,12 +74,28 @@ export function GetShadowFile(arg1) {
   return window['go']['main']['App']['GetShadowFile'](arg1);
 }
 
+export function GitRepoStatus(arg1) {
+  return window['go']['main']['App']['GitRepoStatus'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
 
+export function HarnessRenderURL(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['HarnessRenderURL'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function HasCorruption() {
   return window['go']['main']['App']['HasCorruption']();
+}
+
+export function HasGeminiKey() {
+  return window['go']['main']['App']['HasGeminiKey']();
+}
+
+export function InspectSRE(arg1) {
+  return window['go']['main']['App']['InspectSRE'](arg1);
 }
 
 export function ListFiles(arg1) {
@@ -78,6 +110,10 @@ export function OpenGitClient(arg1) {
   return window['go']['main']['App']['OpenGitClient'](arg1);
 }
 
+export function ProbeHarness(arg1, arg2) {
+  return window['go']['main']['App']['ProbeHarness'](arg1, arg2);
+}
+
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
@@ -88,6 +124,10 @@ export function RemoveProject(arg1) {
 
 export function RestoreBackup() {
   return window['go']['main']['App']['RestoreBackup']();
+}
+
+export function RevealInFileManager(arg1) {
+  return window['go']['main']['App']['RevealInFileManager'](arg1);
 }
 
 export function SaveAppState(arg1, arg2) {
@@ -104,6 +144,10 @@ export function SavePreference(arg1, arg2) {
 
 export function SaveShadowFile(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveShadowFile'](arg1, arg2, arg3);
+}
+
+export function SearchContent(arg1, arg2) {
+  return window['go']['main']['App']['SearchContent'](arg1, arg2);
 }
 
 export function SelectCssFile() {
@@ -130,6 +174,14 @@ export function SelectSvgFile() {
   return window['go']['main']['App']['SelectSvgFile']();
 }
 
+export function SplitDocument(arg1) {
+  return window['go']['main']['App']['SplitDocument'](arg1);
+}
+
 export function UpdateProjectLastOpened(arg1) {
   return window['go']['main']['App']['UpdateProjectLastOpened'](arg1);
+}
+
+export function ValidateSlug(arg1) {
+  return window['go']['main']['App']['ValidateSlug'](arg1);
 }

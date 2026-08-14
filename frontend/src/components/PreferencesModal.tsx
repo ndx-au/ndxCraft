@@ -35,10 +35,11 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose, pr
   const [spellCheck, setSpellCheck] = React.useState(true);
   const [showHiddenFiles, setShowHiddenFiles] = React.useState(false);
 
-  const [fontFamily, setFontFamily] = React.useState("Inter, sans-serif");
+  const [fontFamily, setFontFamily] = React.useState('"IBM Plex Sans", sans-serif');
   const [fontSize, setFontSize] = React.useState(16);
   const [lineHeight, setLineHeight] = React.useState(1.6);
-  const [theme, setTheme] = React.useState("Midnight");
+  const [theme, setTheme] = React.useState("dark");
+  const [harnessUrl, setHarnessUrl] = React.useState("http://127.0.0.1:8080");
 
   // Git Settings
   const [gitClientPath, setGitClientPath] = React.useState("");
@@ -77,6 +78,7 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose, pr
         if (prefs.fontSize) setFontSize(Number(prefs.fontSize));
         if (prefs.lineHeight) setLineHeight(Number(prefs.lineHeight));
         if (prefs.theme) setTheme(prefs.theme as string);
+        if (prefs.harnessUrl) setHarnessUrl(prefs.harnessUrl as string);
 
         if (prefs.git_client_path) setGitClientPath(prefs.git_client_path as string);
         if (prefs.git_client_args) setGitClientArgs(prefs.git_client_args as string);
@@ -96,7 +98,8 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose, pr
       await SavePreference("fontFamily", fontFamily);
       await SavePreference("fontSize", fontSize);
       await SavePreference("lineHeight", lineHeight);
-      await SavePreference("theme", theme);
+      await SavePreference("theme", theme === 'light' || theme === 'Light' ? 'light' : 'dark');
+      await SavePreference("harnessUrl", harnessUrl);
 
       await SavePreference("git_client_path", gitClientPath);
       await SavePreference("git_client_args", gitClientArgs);
@@ -320,25 +323,30 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose, pr
 
             {/* Theme Tab */}
             <TabsContent value="theme" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="grid grid-cols-3 gap-4">
-                {['Midnight', 'Nebula', 'Sunset'].map((t) => (
-                  <div
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    className={`cursor-pointer group relative overflow-hidden rounded-xl border transition-all ${theme === t ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-800 hover:border-indigo-500'}`}
+              <div className="grid grid-cols-2 gap-4">
+                {[{ id: 'dark', label: 'Dark' }, { id: 'light', label: 'Light' }].map((t) => (
+                  <button
+                    type="button"
+                    key={t.id}
+                    onClick={() => setTheme(t.id)}
+                    className={`cursor-pointer text-left overflow-hidden rounded-xl border transition-all ${theme === t.id ? 'border-fcms ring-2 ring-fcms/20' : 'border-border hover:border-fcms/50'}`}
                   >
-                    <div className={`h-24 bg-gradient-to-br ${t === 'Midnight' ? 'from-gray-900 to-black' :
-                      t === 'Nebula' ? 'from-indigo-900 to-purple-900' :
-                        'from-orange-900 to-red-900'
-                      }`} />
-                    <div className="p-3 bg-gray-900">
-                      <p className={`font-medium transition-colors ${theme === t ? 'text-indigo-400' : 'text-gray-200 group-hover:text-indigo-400'}`}>{t}</p>
+                    <div className={`h-20 ${t.id === 'dark' ? 'bg-[#0B0F14]' : 'bg-[#F7F6F3]'}`} />
+                    <div className="p-3 bg-card">
+                      <p className="font-medium">{t.label}</p>
                     </div>
-                    {t === 'Midnight' && (
-                      <div className="absolute top-2 right-2 w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
-                    )}
-                  </div>
+                  </button>
                 ))}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Harness URL</Label>
+                <Input
+                  value={harnessUrl}
+                  onChange={(e) => setHarnessUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:8080"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Used for live /fcms/render preview when the harness serves this SRE.</p>
               </div>
             </TabsContent>
 
@@ -438,10 +446,12 @@ const PreferencesModal: React.FC<PreferencesModalProps> = ({ isOpen, onClose, pr
             <TabsContent value="shortcuts" className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="space-y-2">
                 {[
-                  { label: 'Save File', keys: ['Ctrl', 'S'] },
-                  { label: 'Open File', keys: ['Ctrl', 'O'] },
-                  { label: 'Toggle Sidebar', keys: ['Ctrl', 'B'] },
-                  { label: 'AI Assistant', keys: ['Ctrl', 'I'] },
+                  { label: 'Save', keys: ['Ctrl', 'S'] },
+                  { label: 'Quick open', keys: ['Ctrl', 'P'] },
+                  { label: 'Command palette', keys: ['Ctrl', 'K'] },
+                  { label: 'Search', keys: ['Ctrl', 'Shift', 'F'] },
+                  { label: 'Cycle source / visual / split', keys: ['Ctrl', '\\'] },
+                  { label: 'Preferences', keys: ['Ctrl', ','] },
                 ].map((shortcut, i) => (
                   <div key={i} className="flex items-center justify-between p-3 rounded bg-gray-900/30 border border-gray-800">
                     <span className="text-gray-300">{shortcut.label}</span>

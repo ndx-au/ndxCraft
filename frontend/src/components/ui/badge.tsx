@@ -5,7 +5,7 @@
  * Purpose: Displays a small status indicator or label.
  */
 import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+import { cva } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
@@ -29,13 +29,13 @@ const badgeVariants = cva(
   }
 )
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-  VariantProps<typeof badgeVariants> { }
-
-function Badge({ className, variant, ...props }: BadgeProps) {
+function Badge({ className, variant, children }: {
+  className?: string
+  variant?: 'default' | 'secondary' | 'destructive' | 'outline'
+  children?: React.ReactNode
+}) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    <div className={cn(badgeVariants({ variant }), className)}>{children}</div>
   )
 }
 
